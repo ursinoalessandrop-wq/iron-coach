@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#090910">
+  <title>IRON COACH - AI Workout Planner</title>
+  <link rel="manifest" href="data:application/json,{&quot;name&quot;:&quot;IRON COACH&quot;,&quot;short_name&quot;:&quot;IronCoach&quot;,&quot;start_url&quot;:&quot;.&quot;,&quot;display&quot;:&quot;standalone&quot;,&quot;background_color&quot;:&quot;%23090910&quot;,&quot;theme_color&quot;:&quot;%23090910&quot;}">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #090910; color: #e8e8f0; font-family: 'DM Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    input:focus, textarea:focus { outline: none; }
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-thumb { background: #252538; border-radius: 3px; }
+    @keyframes dot { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.3s ease; }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ─── VERIFIED IMAGE PATHS ────────────────────────────────────────────────────
+const G = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/";
+const im = (f) => [G + f + "/0.jpg", G + f + "/1.jpg"];
+
+const EXERCISES = [
+  { id:"ex01", name:"Barbell Bench Press", bp:"chest", eq:"barbell", img:im("Barbell_Bench_Press_-_Medium_Grip"), ins:["Lie flat, grip wider than shoulders.","Lower bar to mid-chest.","Press to full extension."] },
+  { id:"ex02", name:"Incline Dumbbell Press", bp:"chest", eq:"dumbbell", img:im("Incline_Dumbbell_Press"), ins:["Bench at 30-45°.","Press dumbbells up.","Lower with control."] },
+  { id:"ex03", name:"Push Up", bp:"chest", eq:"body weight", img:im("Pushups"), ins:["Plank, hands shoulder width.","Lower chest to floor.","Push back up."] },
+  { id:"ex04", name:"Chest Dip", bp:"chest", eq:"body weight", img:im("Dips_-_Chest_Version"), ins:["Parallel bars, lean forward.","Lower until arms parallel.","Press up."] },
+  { id:"ex05", name:"Cable Crossover", bp:"chest", eq:"cable", img:im("Cable_Crossover"), ins:["Stand between cables.","Bring hands together in arc.","Squeeze, return slowly."] },
+  { id:"ex06", name:"Dumbbell Fly", bp:"chest", eq:"dumbbell", img:im("Dumbbell_Flyes"), ins:["Lie on bench, dumbbells above.","Open arms wide.","Return, squeeze chest."] },
+  { id:"ex07", name:"Pull Up", bp:"back", eq:"body weight", img:im("Pullups"), ins:["Overhand grip.","Chin above bar.","Lower with control."] },
+  { id:"ex08", name:"Barbell Row", bp:"back", eq:"barbell", img:im("Bent_Over_Barbell_Row"), ins:["Hinge at hips.","Pull bar to lower chest.","Lower with control."] },
+  { id:"ex09", name:"Lat Pulldown", bp:"back", eq:"cable", img:im("Wide-Grip_Lat_Pulldown"), ins:["Wide grip.","Pull to upper chest.","Return with control."] },
+  { id:"ex10", name:"Seated Cable Row", bp:"back", eq:"cable", img:im("Seated_Cable_Rows"), ins:["Sit at station.","Pull to abdomen.","Squeeze back, return."] },
+  { id:"ex11", name:"Dumbbell Row", bp:"back", eq:"dumbbell", img:im("One-Arm_Dumbbell_Row"), ins:["Knee on bench.","Pull dumbbell to hip.","Lower slowly."] },
+  { id:"ex12", name:"Barbell Deadlift", bp:"back", eq:"barbell", img:im("Barbell_Deadlift"), ins:["Bar over mid-foot.","Flat back, grip bar.","Stand up, lower with control."] },
+  { id:"ex13", name:"Barbell Shoulder Press", bp:"shoulders", eq:"barbell", img:im("Barbell_Shoulder_Press"), ins:["Bar at shoulders.","Press overhead.","Lower with control."] },
+  { id:"ex14", name:"Lateral Raise", bp:"shoulders", eq:"dumbbell", img:im("Side_Lateral_Raise"), ins:["Dumbbells at sides.","Raise to shoulder height.","Lower slowly."] },
+  { id:"ex15", name:"Dumbbell Shoulder Press", bp:"shoulders", eq:"dumbbell", img:im("Dumbbell_Shoulder_Press"), ins:["Dumbbells at shoulders.","Press to extension.","Lower with control."] },
+  { id:"ex16", name:"Front Raise", bp:"shoulders", eq:"dumbbell", img:im("Front_Dumbbell_Raise"), ins:["In front of thighs.","Raise to shoulder height.","Lower, alternate."] },
+  { id:"ex17", name:"Face Pull", bp:"shoulders", eq:"cable", img:im("Face_Pull"), ins:["Cable at face height.","Pull to face, elbows high.","Squeeze rear delts."] },
+  { id:"ex18", name:"Barbell Squat", bp:"legs", eq:"barbell", img:im("Barbell_Squat"), ins:["Bar on upper back.","Squat to parallel.","Drive through heels."] },
+  { id:"ex19", name:"Leg Press", bp:"legs", eq:"machine", img:im("Leg_Press"), ins:["Feet shoulder width on platform.","Lower to 90°.","Press back up."] },
+  { id:"ex20", name:"Romanian Deadlift", bp:"legs", eq:"barbell", img:im("Romanian_Deadlift"), ins:["Hold at hips.","Hinge, slight knee bend.","Lower to stretch, return."] },
+  { id:"ex21", name:"Dumbbell Lunge", bp:"legs", eq:"dumbbell", img:im("Dumbbell_Lunges"), ins:["Step forward.","Lower back knee.","Push off, alternate."] },
+  { id:"ex22", name:"Lying Leg Curl", bp:"legs", eq:"machine", img:im("Lying_Leg_Curls"), ins:["Lie face down.","Curl to glutes.","Lower slowly."] },
+  { id:"ex23", name:"Standing Calf Raise", bp:"legs", eq:"body weight", img:im("Standing_Calf_Raises"), ins:["Balls of feet on edge.","Raise heels high.","Lower below platform."] },
+  { id:"ex24", name:"Leg Extension", bp:"legs", eq:"machine", img:im("Leg_Extensions"), ins:["Ankles behind pad.","Extend legs fully.","Lower with control."] },
+  { id:"ex25", name:"Hip Thrust", bp:"legs", eq:"barbell", img:im("Barbell_Hip_Thrust"), ins:["Upper back on bench, bar on hips.","Drive hips up.","Squeeze glutes, lower."] },
+  { id:"ex26", name:"Bulgarian Split Squat", bp:"legs", eq:"dumbbell", img:im("Dumbbell_Lunges"), ins:["Rear foot on bench.","Lower into lunge.","Push up through front heel."] },
+  { id:"ex27", name:"Barbell Curl", bp:"arms", eq:"barbell", img:im("Barbell_Curl"), ins:["Underhand grip.","Curl to shoulders.","Lower slowly."] },
+  { id:"ex28", name:"Tricep Pushdown", bp:"arms", eq:"cable", img:im("Triceps_Pushdown"), ins:["Elbows at sides.","Push to full extension.","Return with control."] },
+  { id:"ex29", name:"Hammer Curl", bp:"arms", eq:"dumbbell", img:im("Hammer_Curls"), ins:["Neutral grip.","Curl to shoulders.","Lower slowly."] },
+  { id:"ex30", name:"Concentration Curl", bp:"arms", eq:"dumbbell", img:im("Concentration_Curls"), ins:["Sit, elbow on inner thigh.","Curl up.","Lower to full extension."] },
+  { id:"ex31", name:"Tricep Dips", bp:"arms", eq:"body weight", img:im("Dips_-_Triceps_Version"), ins:["Hands on bench behind.","Lower body.","Push back up."] },
+  { id:"ex32", name:"Skull Crusher", bp:"arms", eq:"barbell", img:im("EZ-Bar_Skullcrusher"), ins:["Lie on bench, EZ bar above.","Lower to forehead.","Extend back up."] },
+  { id:"ex33", name:"Plank", bp:"core", eq:"body weight", img:im("Plank"), ins:["Forearms on floor.","Body straight, core engaged.","Hold, breathe steadily."] },
+  { id:"ex34", name:"Hanging Leg Raise", bp:"core", eq:"body weight", img:im("Hanging_Leg_Raise"), ins:["Hang from bar.","Raise legs to 90°.","Lower with control."] },
+  { id:"ex35", name:"Russian Twist", bp:"core", eq:"body weight", img:im("Russian_Twist"), ins:["Lean back slightly.","Rotate torso side to side.","Core tight throughout."] },
+  { id:"ex36", name:"Cable Crunch", bp:"core", eq:"cable", img:im("Cable_Crunch"), ins:["Kneel at cable machine.","Crunch down.","Return with control."] },
+  { id:"ex37", name:"Mountain Climbers", bp:"full body", eq:"body weight", img:im("Mountain_Climbers"), ins:["Plank position.","Drive knees alternately.","Fast, hips level."] },
+  { id:"ex38", name:"Burpee", bp:"full body", eq:"body weight", img:im("Pushups"), ins:["Drop to push-up.","Push up.","Jump feet forward, jump up."] },
+  { id:"ex39", name:"Jump Squat", bp:"legs", eq:"body weight", img:im("Barbell_Squat"), ins:["Squat down.","Explode into jump.","Land soft, repeat."] },
+  { id:"ex40", name:"High Knees", bp:"full body", eq:"body weight", img:im("Jogging_Treadmill"), ins:["Run in place.","Drive knees high.","Arms pumping."] },
+  { id:"mob_cat_cow", name:"Cat-Cow Stretch", bp:"mobility", eq:"body weight", img:im("Cat_Stretch"), ins:["All fours.","Arch back up (cat), dip down (cow).","Flow with breath, 10 reps."] },
+  { id:"mob_world", name:"World's Greatest Stretch", bp:"mobility", eq:"body weight", img:im("Dumbbell_Lunges"), ins:["Deep lunge.","Rotate torso, reach arm up.","Hold 3s, switch sides."] },
+  { id:"mob_9090", name:"90/90 Hip Stretch", bp:"mobility", eq:"body weight", img:im("Butterfly"), ins:["Both legs at 90 degrees.","Lean over front leg.","Hold 30s, switch."] },
+  { id:"mob_thoracic", name:"Thoracic Rotation", bp:"mobility", eq:"body weight", img:im("Russian_Twist"), ins:["Side-lying, knees stacked.","Rotate upper body, open chest.","5 each side."] },
+  { id:"mob_pigeon", name:"Pigeon Stretch", bp:"mobility", eq:"body weight", img:im("Butterfly"), ins:["One knee forward.","Back leg extended.","Lean in, hold 45s each."] },
+  { id:"mob_couch", name:"Couch Stretch", bp:"mobility", eq:"body weight", img:im("Dumbbell_Lunges"), ins:["Back foot against wall.","Drive hips forward.","Hold 45s each side."] },
+  { id:"mob_foam", name:"Foam Roll Thoracic", bp:"mobility", eq:"foam roller", img:im("Plank"), ins:["Roller at upper back.","Arms crossed over chest.","Roll slowly up and down."] },
+  { id:"mob_dislocate", name:"Shoulder Dislocates", bp:"mobility", eq:"band", img:im("Side_Lateral_Raise"), ins:["Hold band wide.","Over head and behind back.","Return slowly, arms straight."] },
+];
+
+const C = { bg:"#090910", surface:"#111119", card:"#19192a", accent:"#00e68a", accentGlow:"rgba(0,230,138,0.1)", text:"#e8e8f0", textDim:"#6e6e88", border:"#252538", warning:"#ffa726", chatU:"#162040", chatA:"#0d1e14" };
+
+// ─── API KEY STORAGE ─────────────────────────────────────────────────────────
+const getKey = () => localStorage.getItem("ic_anthropic_key") || "";
+const setKey = (k) => localStorage.setItem("ic_anthropic_key", k);
+
+// ─── TIMER ───────────────────────────────────────────────────────────────────
+function Timer({ sec, onDone }) {
+  const [r, setR] = useState(sec);
+  const total = useRef(sec);
+  useEffect(() => { if (r <= 0) { onDone(); return; } const t = setTimeout(() => setR(x => x - 1), 1000); return () => clearTimeout(t); }, [r]);
+  const rd = 54, ci = 2 * Math.PI * rd;
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", zIndex:2000, gap:16 }}>
+      <div style={{ fontSize:11, color:C.textDim, letterSpacing:3, fontWeight:600 }}>RIPOSO</div>
+      <svg width="190" height="190" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r={rd} fill="none" stroke={C.border} strokeWidth="5" />
+        <circle cx="60" cy="60" r={rd} fill="none" stroke={C.accent} strokeWidth="5" strokeDasharray={ci} strokeDashoffset={ci*(1-r/total.current)} strokeLinecap="round" transform="rotate(-90 60 60)" style={{ transition:"stroke-dashoffset 1s linear" }} />
+        <text x="60" y="55" textAnchor="middle" fill={C.text} fontSize="32" fontWeight="700">{Math.floor(r/60)}:{(r%60).toString().padStart(2,"0")}</text>
+        <text x="60" y="76" textAnchor="middle" fill={r<=3?C.accent:C.textDim} fontSize="12">{r<=3?"VAI!":"respira..."}</text>
+      </svg>
+      <button onClick={onDone} style={{ padding:"10px 30px", background:"transparent", border:`1px solid ${C.border}`, borderRadius:10, color:C.textDim, cursor:"pointer", fontSize:14 }}>Salta ⏩</button>
+    </div>
+  );
+}
+
+// ─── IMAGE SLIDESHOW ─────────────────────────────────────────────────────────
+function ImgSlide({ images, name }) {
+  const [idx, setIdx] = useState(0);
+  const [err, setErr] = useState(false);
+  const [ok, setOk] = useState(false);
+  useEffect(() => { if (!images || images.length <= 1) return; const t = setInterval(() => setIdx(i => (i + 1) % images.length), 1200); return () => clearInterval(t); }, [images]);
+  if (!images?.length || err) return (<div style={{ height:150, background:"#0e0e18", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, marginBottom:10 }}>🏋️</div>);
+  return (
+    <div style={{ position:"relative", borderRadius:12, overflow:"hidden", background:"#f0efe8", marginBottom:10, minHeight:ok?"auto":150 }}>
+      {!ok && <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}><span style={{ fontSize:11, color:"#999" }}>Caricamento...</span></div>}
+      <img src={images[idx]} alt={name} style={{ width:"100%", maxHeight:230, objectFit:"contain", display:"block", margin:"0 auto", opacity:ok?1:0, transition:"opacity 0.3s" }} onLoad={() => setOk(true)} onError={() => setErr(true)} />
+      {images.length > 1 && ok && <div style={{ position:"absolute", bottom:6, left:"50%", transform:"translateX(-50%)", display:"flex", gap:5 }}>{images.map((_,i) => <div key={i} style={{ width:7, height:7, borderRadius:"50%", background:i===idx?C.accent:"rgba(0,0,0,0.2)" }} />)}</div>}
+    </div>
+  );
+}
+
+// ─── EXERCISE CARD ───────────────────────────────────────────────────────────
+function ExCard({ ex, data, idx, onRest }) {
+  const [open, setOpen] = useState(false);
+  const [done, setDone] = useState(0);
+  const all = done >= ex.sets;
+  const go = () => { if (all) return; setDone(d => d + 1); if (done + 1 < ex.sets) onRest(ex.rest || 90); };
+  return (
+    <div className="fade-in" style={{ background:all?"rgba(0,230,138,0.05)":C.card, border:`1px solid ${all?C.accent+"30":C.border}`, borderRadius:14, overflow:"hidden" }}>
+      <div onClick={() => setOpen(!open)} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", cursor:"pointer" }}>
+        <div style={{ width:32, height:32, borderRadius:8, flexShrink:0, background:all?C.accent:C.surface, color:all?C.bg:C.textDim, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700 }}>{all?"✓":idx+1}</div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ color:C.text, fontSize:14, fontWeight:600 }}>{ex.name}</div>
+          <div style={{ color:C.textDim, fontSize:12, marginTop:1 }}>{ex.sets}x{ex.reps} {ex.weight||""} · {ex.rest||90}s</div>
+        </div>
+        <span style={{ color:C.textDim, transition:"transform 0.2s", transform:open?"rotate(180deg)":"" }}>▾</span>
+      </div>
+      {open && (
+        <div style={{ padding:"0 14px 14px" }}>
+          <ImgSlide images={data?.img} name={ex.name} />
+          {data?.ins && <div style={{ marginBottom:10 }}>{data.ins.map((s,i) => <div key={i} style={{ display:"flex", gap:7, marginBottom:4, fontSize:13, color:C.textDim }}><span style={{ color:C.accent, fontWeight:700, flexShrink:0 }}>{i+1}.</span><span>{s}</span></div>)}</div>}
+          {ex.notes && <div style={{ fontSize:12, color:C.warning, padding:"7px 11px", background:"rgba(255,167,38,0.08)", borderRadius:8, marginBottom:10 }}>💡 {ex.notes}</div>}
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>{Array.from({length:ex.sets}).map((_,i) => <div key={i} style={{ width:36, height:36, borderRadius:8, background:i<done?C.accent:C.surface, color:i<done?C.bg:C.textDim, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:600, border:`1px solid ${i<done?C.accent:C.border}` }}>{i<done?"✓":`S${i+1}`}</div>)}</div>
+          <button onClick={go} disabled={all} style={{ width:"100%", padding:"11px", borderRadius:10, background:all?C.surface:C.accent, color:all?C.textDim:C.bg, border:"none", fontWeight:700, fontSize:14, cursor:all?"default":"pointer" }}>{all?"Completato ✓":`Serie ${done+1} completata →`}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── CHAT BUBBLE ─────────────────────────────────────────────────────────────
+function Bubble({ msg }) {
+  const u = msg.role === "user";
+  return (
+    <div className="fade-in" style={{ display:"flex", justifyContent:u?"flex-end":"flex-start", marginBottom:10 }}>
+      <div style={{ maxWidth:"88%", padding:"11px 15px", background:u?C.chatU:C.chatA, borderRadius:u?"16px 16px 4px 16px":"16px 16px 16px 4px", border:`1px solid ${u?"#253050":"#1a2f1e"}`, color:C.text, fontSize:14, lineHeight:1.55, whiteSpace:"pre-wrap" }}>
+        {!u && <div style={{ fontSize:10, color:C.accent, fontWeight:700, marginBottom:3, letterSpacing:1.5 }}>COACH AI</div>}
+        {msg.content}
+      </div>
+    </div>
+  );
+}
+
+const SYS = `Sei un personal trainer AI esperto. Utente: Ale, 30+ anni, attivo (beach volley, basket, HIIT, mobilità).
+RISPONDI IN ITALIANO. Diretto e pratico.
+
+Quando proponi scheda, JSON in \`\`\`json\`\`\`:
+\`\`\`json
+{"workout_plan":{"name":"Nome","weeks":4,"days":[{"day":"Giorno 1 - Push","focus":"Petto, Spalle, Tricipiti","exercises":[{"id":"ex01","name":"Barbell Bench Press","sets":4,"reps":"8-10","rest":120,"weight":"70-80%","notes":"Controlla discesa"}]}]}}
+\`\`\`
+
+ESERCIZI DISPONIBILI (usa SOLO questi id):
+${EXERCISES.map(e => `${e.id}:${e.name}[${e.bp}](${e.eq})`).join(", ")}
+
+Riposo: forza 120-180s, ipertrofia 60-90s, HIIT 20-45s, mobilità 15-30s.
+Riscaldamento nelle note del primo esercizio. Mobilità: id "mob_*". HIIT: body weight.
+Genera SEMPRE il JSON quando proponi la scheda.`;
+
+// ─── MAIN APP ────────────────────────────────────────────────────────────────
+function App() {
+  const [apiKey, setApiKey] = useState(getKey());
+  const [keySet, setKeySet] = useState(!!getKey());
+  const [view, setView] = useState("chat");
+  const [msgs, setMsgs] = useState([{ role:"assistant", content:"Ciao Ale! 💪\n\nSono il tuo Coach AI. Dimmi:\n\n→ Obiettivo? (massa, forza, definizione, mobilità, mix)\n→ Giorni a settimana?\n→ Attrezzatura? (palestra, casa, misto)\n→ Problemi o zone da evitare?\n\nCostruiamo la tua scheda." }]);
+  const [inp, setInp] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [plan, setPlan] = useState(null);
+  const [day, setDay] = useState(0);
+  const [timer, setTimer] = useState(null);
+  const endRef = useRef(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior:"smooth" }); }, [msgs, busy]);
+
+  const parse = (t) => { const m = t.match(/```json\s*([\s\S]*?)\s*```/); if (m) { try { return JSON.parse(m[1]).workout_plan || null; } catch(e){} } return null; };
+
+  const send = async () => {
+    if (!inp.trim() || busy) return;
+    const um = { role:"user", content:inp.trim() };
+    const nm = [...msgs, um]; setMsgs(nm); setInp(""); setBusy(true);
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type":"application/json", "x-api-key": apiKey, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
+        body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:4000, system:SYS, messages:nm.map(m => ({role:m.role, content:m.content})) })
+      });
+      const d = await r.json(); 
+      if (d.error) { setMsgs([...nm, {role:"assistant", content:`Errore API: ${d.error.message}\n\nControlla la tua API key.`}]); setBusy(false); return; }
+      const txt = d.content?.map(c => c.text||"").join("") || "Errore!";
+      const p = parse(txt); if (p) setPlan(p);
+      const show = txt.replace(/```json[\s\S]*?```/g, p ? "\n\n✅ Scheda generata! Tocca 'Scheda' per vederla." : "").trim();
+      setMsgs([...nm, {role:"assistant", content:show}]);
+    } catch(e) { setMsgs([...nm, {role:"assistant", content:"Errore connessione. Riprova!"}]); }
+    setBusy(false);
+  };
+
+  const findEx = (id) => EXERCISES.find(e => e.id === id);
+
+  // ─── KEY SETUP ─────────────────────────────────────────────────────────
+  if (!keySet) return (
+    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div style={{ maxWidth:400, width:"100%", textAlign:"center" }}>
+        <div style={{ fontSize:28, fontWeight:700, color:C.text, marginBottom:6 }}><span style={{ color:C.accent }}>●</span> IRON COACH</div>
+        <div style={{ fontSize:11, color:C.textDim, letterSpacing:3, marginBottom:30 }}>AI WORKOUT PLANNER</div>
+        <div style={{ background:C.card, borderRadius:16, padding:24, border:`1px solid ${C.border}`, textAlign:"left" }}>
+          <div style={{ fontSize:14, fontWeight:600, color:C.text, marginBottom:12 }}>🔑 Anthropic API Key</div>
+          <div style={{ fontSize:12, color:C.textDim, lineHeight:1.5, marginBottom:16 }}>
+            Serve per la chat AI. Prendila da console.anthropic.com → API Keys. Costa pochi centesimi/mese per uso personale. Viene salvata solo nel tuo browser.
+          </div>
+          <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-ant-..."
+            style={{ width:"100%", padding:"12px 14px", background:C.surface, border:`1px solid ${C.border}`, borderRadius:10, color:C.text, fontSize:14, fontFamily:"inherit", marginBottom:12 }} />
+          <button onClick={() => { if(apiKey.trim()){ setKey(apiKey.trim()); setKeySet(true); }}} disabled={!apiKey.trim()}
+            style={{ width:"100%", padding:"13px", borderRadius:10, background:apiKey.trim()?C.accent:C.surface, color:apiKey.trim()?C.bg:C.textDim, border:"none", fontWeight:700, fontSize:15, cursor:apiKey.trim()?"pointer":"default" }}>
+            Inizia 🏋️
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ─── MAIN VIEW ─────────────────────────────────────────────────────────
+  return (
+    <div style={{ minHeight:"100vh", background:C.bg, color:C.text, maxWidth:480, margin:"0 auto", display:"flex", flexDirection:"column" }}>
+      {/* HEADER */}
+      <div style={{ padding:"12px 16px", borderBottom:`1px solid ${C.border}`, background:C.surface, position:"sticky", top:0, zIndex:100 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+          <div>
+            <div style={{ fontSize:17, fontWeight:700 }}><span style={{ color:C.accent }}>●</span> IRON COACH</div>
+            <div style={{ fontSize:10, color:C.textDim, letterSpacing:2 }}>AI WORKOUT PLANNER</div>
+          </div>
+          {plan && <div style={{ fontSize:10, color:C.accent, background:C.accentGlow, padding:"3px 10px", borderRadius:20, fontWeight:700 }}>SCHEDA</div>}
+        </div>
+        <div style={{ display:"flex", gap:4 }}>
+          {["chat","workout"].map(t => (
+            <button key={t} onClick={() => setView(t)} style={{ flex:1, padding:"8px 0", borderRadius:10, background:view===t?C.accent:"transparent", color:view===t?C.bg:C.textDim, border:view===t?"none":`1px solid ${C.border}`, fontWeight:700, fontSize:13, cursor:"pointer", opacity:t==="workout"&&!plan?0.35:1 }}>
+              {t==="chat"?"💬 Chat":"🏋️ Scheda"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* CHAT */}
+      {view==="chat" && (
+        <div style={{ flex:1, display:"flex", flexDirection:"column" }}>
+          <div style={{ flex:1, overflow:"auto", padding:"12px 12px 110px" }}>
+            {msgs.map((m,i) => <Bubble key={i} msg={m} />)}
+            {busy && <div style={{ display:"flex", gap:6, padding:"10px 16px" }}>{[0,1,2].map(i => <div key={i} style={{ width:8, height:8, borderRadius:"50%", background:C.accent, animation:`dot 1s ${i*0.2}s infinite` }} />)}</div>}
+            <div ref={endRef} />
+          </div>
+          <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, padding:"8px 12px 16px", background:`linear-gradient(transparent, ${C.bg} 25%)` }}>
+            <div style={{ display:"flex", gap:8, background:C.surface, borderRadius:14, border:`1px solid ${C.border}`, padding:5 }}>
+              <textarea value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => { if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); send(); }}} placeholder="Scrivi al coach..." rows={1}
+                style={{ flex:1, background:"transparent", border:"none", color:C.text, fontSize:14, padding:"10px 12px", resize:"none", lineHeight:1.4, fontFamily:"inherit" }} />
+              <button onClick={send} disabled={!inp.trim()||busy}
+                style={{ width:44, height:44, borderRadius:10, flexShrink:0, background:inp.trim()?C.accent:C.card, color:inp.trim()?C.bg:C.textDim, border:"none", fontSize:18, cursor:inp.trim()?"pointer":"default", display:"flex", alignItems:"center", justifyContent:"center" }}>↑</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WORKOUT */}
+      {view==="workout" && (
+        <div style={{ flex:1, overflow:"auto", padding:"12px 12px 40px" }}>
+          {!plan ? (
+            <div style={{ textAlign:"center", padding:"60px 20px", color:C.textDim }}>
+              <div style={{ fontSize:48, marginBottom:14 }}>🏋️</div>
+              <div style={{ fontSize:16, fontWeight:600, marginBottom:6 }}>Nessuna scheda</div>
+              <div style={{ fontSize:13 }}>Chatta col Coach per crearla</div>
+              <button onClick={() => setView("chat")} style={{ marginTop:18, padding:"11px 26px", background:C.accent, color:C.bg, border:"none", borderRadius:10, fontWeight:700, cursor:"pointer", fontSize:14 }}>Vai alla Chat</button>
+            </div>
+          ) : (
+            <>
+              <div style={{ marginBottom:14 }}>
+                <div style={{ fontSize:19, fontWeight:700 }}>{plan.name}</div>
+                <div style={{ fontSize:12, color:C.textDim, marginTop:2 }}>{plan.weeks} sett. · {plan.days?.length} giorni</div>
+              </div>
+              <div style={{ display:"flex", gap:5, overflowX:"auto", marginBottom:14, paddingBottom:4 }}>
+                {plan.days?.map((d,i) => (
+                  <button key={i} onClick={() => setDay(i)} style={{ padding:"7px 13px", borderRadius:9, whiteSpace:"nowrap", flexShrink:0, background:day===i?C.accent:C.card, color:day===i?C.bg:C.textDim, border:day===i?"none":`1px solid ${C.border}`, fontWeight:600, fontSize:12, cursor:"pointer" }}>
+                    {d.day?.replace(/Giorno \d+ - /,"")||`G${i+1}`}
+                  </button>
+                ))}
+              </div>
+              {plan.days?.[day] && (
+                <>
+                  <div style={{ padding:"9px 13px", background:C.accentGlow, borderRadius:10, marginBottom:12, border:`1px solid ${C.accent}20` }}>
+                    <div style={{ fontSize:15, fontWeight:700 }}>{plan.days[day].day}</div>
+                    <div style={{ fontSize:12, color:C.textDim, marginTop:2 }}>{plan.days[day].focus}</div>
+                  </div>
+                  {timer && <Timer sec={timer} onDone={() => setTimer(null)} />}
+                  <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
+                    {plan.days[day].exercises?.map((ex,i) => <ExCard key={ex.id+i} ex={ex} data={findEx(ex.id)} idx={i} onRest={s => setTimer(s)} />)}
+                  </div>
+                </>
+              )}
+              <button onClick={() => setView("chat")} style={{ width:"100%", marginTop:18, padding:"12px", background:C.surface, border:`1px solid ${C.border}`, borderRadius:12, color:C.textDim, fontWeight:600, fontSize:13, cursor:"pointer" }}>💬 Modifica in chat</button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("app")).render(<App />);
+</script>
+</body>
+</html>
