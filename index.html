@@ -151,6 +151,16 @@ function ImgSlide({ images, name }) {
   );
 }
 
+// ─── ERROR BOUNDARY ──────────────────────────────────────────────────────────
+class ErrBound extends React.Component {
+  constructor(p) { super(p); this.state = {err:false}; }
+  static getDerivedStateFromError() { return {err:true}; }
+  render() {
+    if (this.state.err) return React.createElement('div', {style:{padding:"10px 14px",background:"#1a0a0a",border:"1px solid #ff444440",borderRadius:12,color:"#ff7070",fontSize:12}}, "⚠ Esercizio non disponibile");
+    return this.props.children;
+  }
+}
+
 // ─── EXERCISE CARD ───────────────────────────────────────────────────────────
 function ExCard({ ex, dbData, idx, onTimer }) {
   const [open, setOpen] = useState(false);
@@ -159,8 +169,8 @@ function ExCard({ ex, dbData, idx, onTimer }) {
   const all = done >= sets;
   const isTime = !!ex.duration;
   // images: from DB if available, fallback to hardcoded data
-  const imgs = dbData ? dbData.images.map(p => IMG_BASE + p) : (ex._img || []);
-  const ins = dbData?.instructions || ex._ins || [];
+  const imgs = dbData?.images?.length ? dbData.images.map(p => IMG_BASE + p) : (ex._img || []);
+  const ins = dbData?.instructions?.length ? dbData.instructions : (ex._ins || []);
 
   const go = () => {
     if (all) return;
@@ -415,7 +425,7 @@ function App() {
                   </div>
                   {timer && <Timer sec={timer.sec} label={timer.label} color={timer.color} onDone={() => { if(timer.onDone) timer.onDone(); setTimer(null); }} />}
                   <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
-                    {plan.days[day].exercises?.map((ex,i) => <ExCard key={(ex.id||ex.name)+i} ex={ex} dbData={findEx(ex.id, ex.name)} idx={i} onTimer={cfg => setTimer(cfg)} />)}
+                    {plan.days[day].exercises?.map((ex,i) => <ErrBound key={(ex.id||ex.name)+i}><ExCard ex={ex} dbData={findEx(ex.id, ex.name)} idx={i} onTimer={cfg => setTimer(cfg)} /></ErrBound>)}
                   </div>
                 </>
               )}
