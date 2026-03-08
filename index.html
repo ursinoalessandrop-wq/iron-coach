@@ -26,49 +26,74 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 
-<script type="text/babel">
-const { useState, useEffect, useRef } = React;
+
+<script>
+const {
+  useState,
+  useEffect,
+  useRef
+} = React;
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const C = {
-  bg:"#090910", surface:"#111119", card:"#19192a",
-  accent:"#00e68a", accentGlow:"rgba(0,230,138,0.1)",
-  blue:"#4488ff", blueGlow:"rgba(68,136,255,0.15)",
-  text:"#e8e8f0", textDim:"#6e6e88", border:"#252538",
-  warning:"#ffa726", chatU:"#162040", chatA:"#0d1e14"
+  bg: "#090910",
+  surface: "#111119",
+  card: "#19192a",
+  accent: "#00e68a",
+  accentGlow: "rgba(0,230,138,0.1)",
+  blue: "#4488ff",
+  blueGlow: "rgba(68,136,255,0.15)",
+  text: "#e8e8f0",
+  textDim: "#6e6e88",
+  border: "#252538",
+  warning: "#ffa726",
+  chatU: "#162040",
+  chatA: "#0d1e14"
 };
-
 const DB_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json";
 const IMG_BASE = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/";
 
 // ─── STORAGE ──────────────────────────────────────────────────────────────────
 const getKey = () => localStorage.getItem("ic_anthropic_key") || "";
-const setKey = (k) => localStorage.setItem("ic_anthropic_key", k);
-const getSavedPlans = () => { try { return JSON.parse(localStorage.getItem("ic_saved_plans") || "[]"); } catch { return []; } };
-const savePlan = (plan) => {
+const setKey = k => localStorage.setItem("ic_anthropic_key", k);
+const getSavedPlans = () => {
+  try {
+    return JSON.parse(localStorage.getItem("ic_saved_plans") || "[]");
+  } catch {
+    return [];
+  }
+};
+const savePlan = plan => {
   const plans = getSavedPlans();
-  const entry = { id: Date.now(), savedAt: new Date().toISOString(), plan };
+  const entry = {
+    id: Date.now(),
+    savedAt: new Date().toISOString(),
+    plan
+  };
   plans.unshift(entry);
   if (plans.length > 30) plans.pop();
   localStorage.setItem("ic_saved_plans", JSON.stringify(plans));
   return entry.id;
 };
-const deleteSavedPlan = (id) => {
+const deleteSavedPlan = id => {
   const plans = getSavedPlans().filter(p => p.id !== id);
   localStorage.setItem("ic_saved_plans", JSON.stringify(plans));
 };
 
 // ─── FUZZY EXERCISE MATCH ─────────────────────────────────────────────────────
-function normalize(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim(); }
+function normalize(s) {
+  return (s || "").toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
+}
 function matchScore(a, b) {
-  a = normalize(a); b = normalize(b);
+  a = normalize(a);
+  b = normalize(b);
   if (a === b) return 100;
   if (b.includes(a) || a.includes(b)) return 80;
-  const wa = a.split(" "); const wb = b.split(" ");
+  const wa = a.split(" ");
+  const wb = b.split(" ");
   const common = wa.filter(w => w.length > 2 && wb.includes(w)).length;
-  return (common / Math.max(wa.length, wb.length)) * 60;
+  return common / Math.max(wa.length, wb.length) * 60;
 }
 function findExercise(exercises, nameOrId) {
   if (!exercises?.length || !nameOrId) return null;
@@ -76,10 +101,14 @@ function findExercise(exercises, nameOrId) {
   const byId = exercises.find(e => e.id === nameOrId);
   if (byId) return byId;
   // fuzzy name
-  let best = null, bestScore = 0;
+  let best = null,
+    bestScore = 0;
   for (const e of exercises) {
     const s = matchScore(nameOrId, e.name);
-    if (s > bestScore) { bestScore = s; best = e; }
+    if (s > bestScore) {
+      bestScore = s;
+      best = e;
+    }
   }
   return bestScore >= 25 ? best : null;
 }
@@ -87,45 +116,106 @@ function findExercise(exercises, nameOrId) {
 // ─── FORMAT EXERCISE FOR AI ───────────────────────────────────────────────────
 function buildExerciseList(exercises) {
   if (!exercises?.length) return "Database non ancora caricato.";
-  return exercises.map(e => `${e.name}[${e.category}](${(e.equipment||[]).join(",")||"body weight"})`).join(" | ");
+  return exercises.map(e => `${e.name}[${e.category}](${(e.equipment || []).join(",") || "body weight"})`).join(" | ");
 }
 
 // ─── COUNTDOWN TIMER OVERLAY ──────────────────────────────────────────────────
-function TimerOverlay({ sec, label, color, onDone, onSkip }) {
+function TimerOverlay({
+  sec,
+  label,
+  color,
+  onDone,
+  onSkip
+}) {
   const [r, setR] = useState(sec);
   const total = useRef(sec);
   useEffect(() => {
-    if (r <= 0) { onDone(); return; }
+    if (r <= 0) {
+      onDone();
+      return;
+    }
     const t = setTimeout(() => setR(x => x - 1), 1000);
     return () => clearTimeout(t);
   }, [r]);
-  const rd = 54, ci = 2 * Math.PI * rd;
+  const rd = 54,
+    ci = 2 * Math.PI * rd;
   const pct = r / total.current;
-  return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.94)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", zIndex:2000, gap:16 }}>
-      <div style={{ fontSize:11, color:color, letterSpacing:3, fontWeight:700 }}>{label}</div>
-      <svg width="200" height="200" viewBox="0 0 120 120">
-        <circle cx="60" cy="60" r={rd} fill="none" stroke={C.border} strokeWidth="5" />
-        <circle cx="60" cy="60" r={rd} fill="none" stroke={color} strokeWidth="5"
-          strokeDasharray={ci} strokeDashoffset={ci * (1 - pct)}
-          strokeLinecap="round" transform="rotate(-90 60 60)"
-          style={{ transition:"stroke-dashoffset 1s linear" }} />
-        <text x="60" y="55" textAnchor="middle" fill={C.text} fontSize="32" fontWeight="700">
-          {Math.floor(r/60)}:{(r%60).toString().padStart(2,"0")}
-        </text>
-        <text x="60" y="76" textAnchor="middle" fill={r<=3?color:C.textDim} fontSize="12">
-          {r<=3?"VAI!":label==="LAVORO"?"mantieni...":"respira..."}
-        </text>
-      </svg>
-      <button onClick={onSkip} style={{ padding:"10px 30px", background:"transparent", border:`1px solid ${C.border}`, borderRadius:10, color:C.textDim, cursor:"pointer", fontSize:14 }}>
-        {label==="LAVORO" ? "Fine serie ✓" : "Salta ⏩"}
-      </button>
-    </div>
-  );
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.94)",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 2000,
+      gap: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: color,
+      letterSpacing: 3,
+      fontWeight: 700
+    }
+  }, label), /*#__PURE__*/React.createElement("svg", {
+    width: "200",
+    height: "200",
+    viewBox: "0 0 120 120"
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "60",
+    cy: "60",
+    r: rd,
+    fill: "none",
+    stroke: C.border,
+    strokeWidth: "5"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "60",
+    cy: "60",
+    r: rd,
+    fill: "none",
+    stroke: color,
+    strokeWidth: "5",
+    strokeDasharray: ci,
+    strokeDashoffset: ci * (1 - pct),
+    strokeLinecap: "round",
+    transform: "rotate(-90 60 60)",
+    style: {
+      transition: "stroke-dashoffset 1s linear"
+    }
+  }), /*#__PURE__*/React.createElement("text", {
+    x: "60",
+    y: "55",
+    textAnchor: "middle",
+    fill: C.text,
+    fontSize: "32",
+    fontWeight: "700"
+  }, Math.floor(r / 60), ":", (r % 60).toString().padStart(2, "0")), /*#__PURE__*/React.createElement("text", {
+    x: "60",
+    y: "76",
+    textAnchor: "middle",
+    fill: r <= 3 ? color : C.textDim,
+    fontSize: "12"
+  }, r <= 3 ? "VAI!" : label === "LAVORO" ? "mantieni..." : "respira...")), /*#__PURE__*/React.createElement("button", {
+    onClick: onSkip,
+    style: {
+      padding: "10px 30px",
+      background: "transparent",
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      color: C.textDim,
+      cursor: "pointer",
+      fontSize: 14
+    }
+  }, label === "LAVORO" ? "Fine serie ✓" : "Salta ⏩"));
 }
 
 // ─── IMAGE SLIDESHOW ──────────────────────────────────────────────────────────
-function ImgSlide({ images, name }) {
+function ImgSlide({
+  images,
+  name
+}) {
   const [idx, setIdx] = useState(0);
   const [err, setErr] = useState(false);
   const [ok, setOk] = useState(false);
@@ -135,164 +225,449 @@ function ImgSlide({ images, name }) {
     return () => clearInterval(t);
   }, [images]);
   const src = images?.[idx];
-  if (!src || err) return (
-    <div style={{ height:150, background:"#0e0e18", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, marginBottom:10 }}>🏋️</div>
-  );
-  return (
-    <div style={{ position:"relative", borderRadius:12, overflow:"hidden", background:"#f0efe8", marginBottom:10, minHeight:ok?"auto":150 }}>
-      {!ok && <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}><span style={{ fontSize:11, color:"#999" }}>Caricamento…</span></div>}
-      <img src={src} alt={name}
-        style={{ width:"100%", maxHeight:230, objectFit:"contain", display:"block", margin:"0 auto", opacity:ok?1:0, transition:"opacity 0.3s" }}
-        onLoad={() => setOk(true)} onError={() => setErr(true)} />
-      {images.length > 1 && ok && (
-        <div style={{ position:"absolute", bottom:6, left:"50%", transform:"translateX(-50%)", display:"flex", gap:5 }}>
-          {images.map((_,i) => <div key={i} style={{ width:7, height:7, borderRadius:"50%", background:i===idx?C.accent:"rgba(0,0,0,0.2)" }} />)}
-        </div>
-      )}
-    </div>
-  );
+  if (!src || err) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 150,
+      background: "#0e0e18",
+      borderRadius: 12,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 40,
+      marginBottom: 10
+    }
+  }, "\uD83C\uDFCB\uFE0F");
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative",
+      borderRadius: 12,
+      overflow: "hidden",
+      background: "#f0efe8",
+      marginBottom: 10,
+      minHeight: ok ? "auto" : 150
+    }
+  }, !ok && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      inset: 0,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: "#999"
+    }
+  }, "Caricamento\u2026")), /*#__PURE__*/React.createElement("img", {
+    src: src,
+    alt: name,
+    style: {
+      width: "100%",
+      maxHeight: 230,
+      objectFit: "contain",
+      display: "block",
+      margin: "0 auto",
+      opacity: ok ? 1 : 0,
+      transition: "opacity 0.3s"
+    },
+    onLoad: () => setOk(true),
+    onError: () => setErr(true)
+  }), images.length > 1 && ok && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      bottom: 6,
+      left: "50%",
+      transform: "translateX(-50%)",
+      display: "flex",
+      gap: 5
+    }
+  }, images.map((_, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      width: 7,
+      height: 7,
+      borderRadius: "50%",
+      background: i === idx ? C.accent : "rgba(0,0,0,0.2)"
+    }
+  }))));
 }
 
 // ─── EXERCISE CARD ────────────────────────────────────────────────────────────
-function ExCard({ ex, data, idx, onStartTimer }) {
+function ExCard({
+  ex,
+  data,
+  idx,
+  onStartTimer
+}) {
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState(0);
   const all = done >= (ex.sets || 3);
-  const isTime = !!(ex.duration);
+  const isTime = !!ex.duration;
   const images = data ? data.images.map(p => IMG_BASE + p) : [];
   const instructions = data?.instructions || [];
-
   const handleSerie = () => {
     if (all) return;
     if (isTime) {
-      onStartTimer({ type:"work", sec: ex.duration, label:"LAVORO", color:C.blue,
-        onDone:() => { setDone(d => { const nd = d + 1; if (nd < ex.sets) onStartTimer({ type:"rest", sec:ex.rest||60, label:"RIPOSO", color:C.accent }); return nd; }); }
+      onStartTimer({
+        type: "work",
+        sec: ex.duration,
+        label: "LAVORO",
+        color: C.blue,
+        onDone: () => {
+          setDone(d => {
+            const nd = d + 1;
+            if (nd < ex.sets) onStartTimer({
+              type: "rest",
+              sec: ex.rest || 60,
+              label: "RIPOSO",
+              color: C.accent
+            });
+            return nd;
+          });
+        }
       });
     } else {
-      setDone(d => { const nd = d + 1; if (nd < ex.sets) onStartTimer({ type:"rest", sec:ex.rest||90, label:"RIPOSO", color:C.accent }); return nd; });
+      setDone(d => {
+        const nd = d + 1;
+        if (nd < ex.sets) onStartTimer({
+          type: "rest",
+          sec: ex.rest || 90,
+          label: "RIPOSO",
+          color: C.accent
+        });
+        return nd;
+      });
     }
   };
-
-  return (
-    <div className="fade-in" style={{ background:all?"rgba(0,230,138,0.05)":C.card, border:`1px solid ${all?C.accent+"40":C.border}`, borderRadius:14, overflow:"hidden" }}>
-      <div onClick={() => setOpen(!open)} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", cursor:"pointer" }}>
-        <div style={{ width:32, height:32, borderRadius:8, flexShrink:0, background:all?C.accent:C.surface, color:all?C.bg:C.textDim, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700 }}>
-          {all ? "✓" : idx + 1}
-        </div>
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ color:C.text, fontSize:14, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{ex.name}</div>
-          <div style={{ color:C.textDim, fontSize:12, marginTop:1 }}>
-            {ex.sets}x{isTime ? `${ex.duration}s` : ex.reps}
-            {ex.weight ? ` · ${ex.weight}` : ""}
-            {" · "}{ex.rest || (isTime ? 60 : 90)}s riposo
-          </div>
-        </div>
-        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          {isTime && <span style={{ fontSize:10, color:C.blue, background:C.blueGlow, padding:"2px 7px", borderRadius:10, fontWeight:700 }}>⏱</span>}
-          <span style={{ color:C.textDim, transition:"transform 0.2s", transform:open?"rotate(180deg)":"" }}>▾</span>
-        </div>
-      </div>
-
-      {open && (
-        <div style={{ padding:"0 14px 14px" }}>
-          <ImgSlide images={images} name={ex.name} />
-
-          {instructions.length > 0 && (
-            <div style={{ marginBottom:10 }}>
-              {instructions.map((s,i) => (
-                <div key={i} style={{ display:"flex", gap:7, marginBottom:4, fontSize:13, color:C.textDim }}>
-                  <span style={{ color:C.accent, fontWeight:700, flexShrink:0 }}>{i+1}.</span>
-                  <span>{s}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {data && (
-            <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:10 }}>
-              {[...(data.primaryMuscles||[]), ...(data.secondaryMuscles||[]).slice(0,2)].map(m => (
-                <span key={m} style={{ fontSize:10, color:C.textDim, background:C.surface, padding:"2px 8px", borderRadius:8, border:`1px solid ${C.border}` }}>{m}</span>
-              ))}
-            </div>
-          )}
-
-          {ex.notes && (
-            <div style={{ fontSize:12, color:C.warning, padding:"7px 11px", background:"rgba(255,167,38,0.08)", borderRadius:8, marginBottom:10 }}>
-              💡 {ex.notes}
-            </div>
-          )}
-
-          {/* Serie indicator */}
-          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:10 }}>
-            {Array.from({length: ex.sets || 3}).map((_,i) => (
-              <div key={i} style={{ width:38, height:38, borderRadius:8, background:i<done?C.accent:C.surface, color:i<done?C.bg:C.textDim, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:600, border:`1px solid ${i<done?C.accent:C.border}` }}>
-                {i<done ? "✓" : `S${i+1}`}
-              </div>
-            ))}
-          </div>
-
-          <button onClick={handleSerie} disabled={all}
-            style={{ width:"100%", padding:"11px", borderRadius:10, background:all?C.surface:(isTime?C.blue:C.accent), color:all?C.textDim:C.bg, border:"none", fontWeight:700, fontSize:14, cursor:all?"default":"pointer" }}>
-            {all ? "Completato ✓" : isTime ? `▶ Avvia serie ${done+1} (${ex.duration}s)` : `Serie ${done+1} completata →`}
-          </button>
-        </div>
-      )}
-    </div>
-  );
+  return /*#__PURE__*/React.createElement("div", {
+    className: "fade-in",
+    style: {
+      background: all ? "rgba(0,230,138,0.05)" : C.card,
+      border: `1px solid ${all ? C.accent + "40" : C.border}`,
+      borderRadius: 14,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: () => setOpen(!open),
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+      padding: "12px 14px",
+      cursor: "pointer"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 32,
+      height: 32,
+      borderRadius: 8,
+      flexShrink: 0,
+      background: all ? C.accent : C.surface,
+      color: all ? C.bg : C.textDim,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 13,
+      fontWeight: 700
+    }
+  }, all ? "✓" : idx + 1), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.text,
+      fontSize: 14,
+      fontWeight: 600,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis"
+    }
+  }, ex.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textDim,
+      fontSize: 12,
+      marginTop: 1
+    }
+  }, ex.sets, "x", isTime ? `${ex.duration}s` : ex.reps, ex.weight ? ` · ${ex.weight}` : "", " · ", ex.rest || (isTime ? 60 : 90), "s riposo")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6
+    }
+  }, isTime && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      color: C.blue,
+      background: C.blueGlow,
+      padding: "2px 7px",
+      borderRadius: 10,
+      fontWeight: 700
+    }
+  }, "\u23F1"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.textDim,
+      transition: "transform 0.2s",
+      transform: open ? "rotate(180deg)" : ""
+    }
+  }, "\u25BE"))), open && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "0 14px 14px"
+    }
+  }, /*#__PURE__*/React.createElement(ImgSlide, {
+    images: images,
+    name: ex.name
+  }), instructions.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 10
+    }
+  }, instructions.map((s, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      display: "flex",
+      gap: 7,
+      marginBottom: 4,
+      fontSize: 13,
+      color: C.textDim
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.accent,
+      fontWeight: 700,
+      flexShrink: 0
+    }
+  }, i + 1, "."), /*#__PURE__*/React.createElement("span", null, s)))), data && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 4,
+      flexWrap: "wrap",
+      marginBottom: 10
+    }
+  }, [...(data.primaryMuscles || []), ...(data.secondaryMuscles || []).slice(0, 2)].map(m => /*#__PURE__*/React.createElement("span", {
+    key: m,
+    style: {
+      fontSize: 10,
+      color: C.textDim,
+      background: C.surface,
+      padding: "2px 8px",
+      borderRadius: 8,
+      border: `1px solid ${C.border}`
+    }
+  }, m))), ex.notes && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.warning,
+      padding: "7px 11px",
+      background: "rgba(255,167,38,0.08)",
+      borderRadius: 8,
+      marginBottom: 10
+    }
+  }, "\uD83D\uDCA1 ", ex.notes), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 4,
+      flexWrap: "wrap",
+      marginBottom: 10
+    }
+  }, Array.from({
+    length: ex.sets || 3
+  }).map((_, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      width: 38,
+      height: 38,
+      borderRadius: 8,
+      background: i < done ? C.accent : C.surface,
+      color: i < done ? C.bg : C.textDim,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 11,
+      fontWeight: 600,
+      border: `1px solid ${i < done ? C.accent : C.border}`
+    }
+  }, i < done ? "✓" : `S${i + 1}`))), /*#__PURE__*/React.createElement("button", {
+    onClick: handleSerie,
+    disabled: all,
+    style: {
+      width: "100%",
+      padding: "11px",
+      borderRadius: 10,
+      background: all ? C.surface : isTime ? C.blue : C.accent,
+      color: all ? C.textDim : C.bg,
+      border: "none",
+      fontWeight: 700,
+      fontSize: 14,
+      cursor: all ? "default" : "pointer"
+    }
+  }, all ? "Completato ✓" : isTime ? `▶ Avvia serie ${done + 1} (${ex.duration}s)` : `Serie ${done + 1} completata →`)));
 }
 
 // ─── CHAT BUBBLE ──────────────────────────────────────────────────────────────
-function Bubble({ msg }) {
+function Bubble({
+  msg
+}) {
   const u = msg.role === "user";
-  return (
-    <div className="fade-in" style={{ display:"flex", justifyContent:u?"flex-end":"flex-start", marginBottom:10 }}>
-      <div style={{ maxWidth:"88%", padding:"11px 15px", background:u?C.chatU:C.chatA, borderRadius:u?"16px 16px 4px 16px":"16px 16px 16px 4px", border:`1px solid ${u?"#253050":"#1a2f1e"}`, color:C.text, fontSize:14, lineHeight:1.55, whiteSpace:"pre-wrap" }}>
-        {!u && <div style={{ fontSize:10, color:C.accent, fontWeight:700, marginBottom:3, letterSpacing:1.5 }}>COACH AI</div>}
-        {msg.content}
-      </div>
-    </div>
-  );
+  return /*#__PURE__*/React.createElement("div", {
+    className: "fade-in",
+    style: {
+      display: "flex",
+      justifyContent: u ? "flex-end" : "flex-start",
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: "88%",
+      padding: "11px 15px",
+      background: u ? C.chatU : C.chatA,
+      borderRadius: u ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+      border: `1px solid ${u ? "#253050" : "#1a2f1e"}`,
+      color: C.text,
+      fontSize: 14,
+      lineHeight: 1.55,
+      whiteSpace: "pre-wrap"
+    }
+  }, !u && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: C.accent,
+      fontWeight: 700,
+      marginBottom: 3,
+      letterSpacing: 1.5
+    }
+  }, "COACH AI"), msg.content));
 }
 
 // ─── SAVED PLANS PANEL ────────────────────────────────────────────────────────
-function SavedPanel({ onClose, onLoad }) {
+function SavedPanel({
+  onClose,
+  onLoad
+}) {
   const [plans, setPlans] = useState(getSavedPlans());
-  const handleDelete = (id) => { deleteSavedPlan(id); setPlans(getSavedPlans()); };
-  const fmt = (iso) => { try { const d = new Date(iso); return d.toLocaleDateString("it-IT", {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}); } catch { return iso; } };
-
-  return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", zIndex:1500, display:"flex", flexDirection:"column" }}>
-      <div style={{ padding:"14px 16px", borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-        <div style={{ fontWeight:700, fontSize:16 }}>📋 Schede salvate</div>
-        <button onClick={onClose} style={{ background:"none", border:"none", color:C.textDim, fontSize:22, cursor:"pointer" }}>×</button>
-      </div>
-      <div style={{ flex:1, overflow:"auto", padding:12 }}>
-        {plans.length === 0 ? (
-          <div style={{ textAlign:"center", padding:40, color:C.textDim }}>
-            <div style={{ fontSize:32, marginBottom:8 }}>📭</div>
-            <div>Nessuna scheda salvata</div>
-          </div>
-        ) : plans.map(p => (
-          <div key={p.id} className="fade-in" style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:"12px 14px", marginBottom:8 }}>
-            <div style={{ fontWeight:600, fontSize:14, marginBottom:4 }}>{p.plan.name}</div>
-            <div style={{ fontSize:12, color:C.textDim, marginBottom:10 }}>
-              {fmt(p.savedAt)} · {p.plan.weeks} sett. · {p.plan.days?.length} giorni
-            </div>
-            <div style={{ display:"flex", gap:6 }}>
-              <button onClick={() => { onLoad(p.plan); onClose(); }}
-                style={{ flex:1, padding:"8px 0", borderRadius:8, background:C.accent, color:C.bg, border:"none", fontWeight:700, fontSize:13, cursor:"pointer" }}>
-                Carica
-              </button>
-              <button onClick={() => handleDelete(p.id)}
-                style={{ padding:"8px 14px", borderRadius:8, background:"rgba(255,80,80,0.1)", color:"#ff5050", border:"1px solid rgba(255,80,80,0.2)", fontWeight:600, fontSize:13, cursor:"pointer" }}>
-                Elimina
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  const handleDelete = id => {
+    deleteSavedPlan(id);
+    setPlans(getSavedPlans());
+  };
+  const fmt = iso => {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString("it-IT", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    } catch {
+      return iso;
+    }
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.92)",
+      zIndex: 1500,
+      display: "flex",
+      flexDirection: "column"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "14px 16px",
+      borderBottom: `1px solid ${C.border}`,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 16
+    }
+  }, "\uD83D\uDCCB Schede salvate"), /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    style: {
+      background: "none",
+      border: "none",
+      color: C.textDim,
+      fontSize: 22,
+      cursor: "pointer"
+    }
+  }, "\xD7")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      overflow: "auto",
+      padding: 12
+    }
+  }, plans.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: 40,
+      color: C.textDim
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 32,
+      marginBottom: 8
+    }
+  }, "\uD83D\uDCED"), /*#__PURE__*/React.createElement("div", null, "Nessuna scheda salvata")) : plans.map(p => /*#__PURE__*/React.createElement("div", {
+    key: p.id,
+    className: "fade-in",
+    style: {
+      background: C.card,
+      border: `1px solid ${C.border}`,
+      borderRadius: 12,
+      padding: "12px 14px",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 600,
+      fontSize: 14,
+      marginBottom: 4
+    }
+  }, p.plan.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.textDim,
+      marginBottom: 10
+    }
+  }, fmt(p.savedAt), " \xB7 ", p.plan.weeks, " sett. \xB7 ", p.plan.days?.length, " giorni"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      onLoad(p.plan);
+      onClose();
+    },
+    style: {
+      flex: 1,
+      padding: "8px 0",
+      borderRadius: 8,
+      background: C.accent,
+      color: C.bg,
+      border: "none",
+      fontWeight: 700,
+      fontSize: 13,
+      cursor: "pointer"
+    }
+  }, "Carica"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => handleDelete(p.id),
+    style: {
+      padding: "8px 14px",
+      borderRadius: 8,
+      background: "rgba(255,80,80,0.1)",
+      color: "#ff5050",
+      border: "1px solid rgba(255,80,80,0.2)",
+      fontWeight: 600,
+      fontSize: 13,
+      cursor: "pointer"
+    }
+  }, "Elimina"))))));
 }
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
@@ -304,8 +679,8 @@ function App() {
   const [dbLoading, setDbLoading] = useState(true);
   const [dbError, setDbError] = useState(false);
   const [msgs, setMsgs] = useState([{
-    role:"assistant",
-    content:"Ciao Ale! 💪\n\nSono il tuo Coach AI. Dimmi:\n\n→ Obiettivo? (massa, forza, definizione, mobilità, mix)\n→ Giorni a settimana?\n→ Attrezzatura? (palestra, casa, misto)\n→ Problemi o zone da evitare?\n\nCostruiamo la tua scheda."
+    role: "assistant",
+    content: "Ciao Ale! 💪\n\nSono il tuo Coach AI. Dimmi:\n\n→ Obiettivo? (massa, forza, definizione, mobilità, mix)\n→ Giorni a settimana?\n→ Attrezzatura? (palestra, casa, misto)\n→ Problemi o zone da evitare?\n\nCostruiamo la tua scheda."
   }]);
   const [inp, setInp] = useState("");
   const [busy, setBusy] = useState(false);
@@ -317,226 +692,546 @@ function App() {
 
   // Load exercise database
   useEffect(() => {
-    fetch(DB_URL)
-      .then(r => r.json())
-      .then(data => {
-        setExercises(Array.isArray(data) ? data : []);
-        setDbLoading(false);
-      })
-      .catch(() => { setDbError(true); setDbLoading(false); });
+    fetch(DB_URL).then(r => r.json()).then(data => {
+      setExercises(Array.isArray(data) ? data : []);
+      setDbLoading(false);
+    }).catch(() => {
+      setDbError(true);
+      setDbLoading(false);
+    });
   }, []);
-
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior:"smooth" }); }, [msgs, busy]);
-
-  const parse = (t) => {
+  useEffect(() => {
+    endRef.current?.scrollIntoView({
+      behavior: "smooth"
+    });
+  }, [msgs, busy]);
+  const parse = t => {
     const m = t.match(/```json\s*([\s\S]*?)\s*```/);
-    if (m) { try { return JSON.parse(m[1]).workout_plan || null; } catch(e){} }
+    if (m) {
+      try {
+        return JSON.parse(m[1]).workout_plan || null;
+      } catch (e) {}
+    }
     return null;
   };
-
-  const SYS = !exercises.length ? "Sistema in caricamento..." : (
-    "Sei un personal trainer AI esperto. Utente: Ale, 30+ anni, attivo (beach volley, basket, HIIT, mobilit\u00e0).\n" +
-    "RISPONDI IN ITALIANO. Diretto e pratico.\n\n" +
-    "Quando proponi scheda, rispondi con un blocco JSON racchiuso tra ```json e ```:  \n" +
-    '{"workout_plan":{"name":"Nome Scheda","weeks":4,"days":[{"day":"Giorno 1 - Push","focus":"Petto, Spalle, Tricipiti","exercises":[' +
-    '{"id":"","name":"Barbell Bench Press","sets":4,"reps":"8-10","rest":120,"weight":"70-80%","notes":"Controlla discesa"},' +
-    '{"id":"","name":"Plank","sets":3,"duration":60,"rest":45,"notes":"Core attivato"}' +
-    ']}]}}\n\n' +
-    "REGOLE:\n" +
-    "- Il campo name deve corrispondere ESATTAMENTE a un esercizio del database.\n" +
-    "- Per esercizi a TEMPO usa duration in secondi invece di reps.\n" +
-    "- Riposo: forza 120-180s, ipertrofia 60-90s, HIIT 20-45s, mobilit\u00e0 30s.\n" +
-    "- Includi sempre riscaldamento nelle note del primo esercizio.\n\n" +
-    "DATABASE ESERCIZI (~800 disponibili):\n" +
-    buildExerciseList(exercises).substring(0, 6000) +
-    "\n...usa nomi esatti del database."
-  );
-
+  const SYS = !exercises.length ? "Sistema in caricamento..." : "Sei un personal trainer AI esperto. Utente: Ale, 30+ anni, attivo (beach volley, basket, HIIT, mobilit\u00e0).\n" + "RISPONDI IN ITALIANO. Diretto e pratico.\n\n" + "Quando proponi scheda, rispondi con un blocco JSON racchiuso tra ```json e ```:  \n" + '{"workout_plan":{"name":"Nome Scheda","weeks":4,"days":[{"day":"Giorno 1 - Push","focus":"Petto, Spalle, Tricipiti","exercises":[' + '{"id":"","name":"Barbell Bench Press","sets":4,"reps":"8-10","rest":120,"weight":"70-80%","notes":"Controlla discesa"},' + '{"id":"","name":"Plank","sets":3,"duration":60,"rest":45,"notes":"Core attivato"}' + ']}]}}\n\n' + "REGOLE:\n" + "- Il campo name deve corrispondere ESATTAMENTE a un esercizio del database.\n" + "- Per esercizi a TEMPO usa duration in secondi invece di reps.\n" + "- Riposo: forza 120-180s, ipertrofia 60-90s, HIIT 20-45s, mobilit\u00e0 30s.\n" + "- Includi sempre riscaldamento nelle note del primo esercizio.\n\n" + "DATABASE ESERCIZI (~800 disponibili):\n" + buildExerciseList(exercises).substring(0, 6000) + "\n...usa nomi esatti del database.";
   const send = async () => {
     if (!inp.trim() || busy) return;
-    const um = { role:"user", content:inp.trim() };
+    const um = {
+      role: "user",
+      content: inp.trim()
+    };
     const nm = [...msgs, um];
-    setMsgs(nm); setInp(""); setBusy(true);
+    setMsgs(nm);
+    setInp("");
+    setBusy(true);
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json", "x-api-key":apiKey, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
-        body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:4000, system:SYS, messages:nm.map(m => ({role:m.role, content:m.content})) })
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 4000,
+          system: SYS,
+          messages: nm.map(m => ({
+            role: m.role,
+            content: m.content
+          }))
+        })
       });
       const d = await r.json();
-      if (d.error) { setMsgs([...nm, {role:"assistant", content:`Errore API: ${d.error.message}\n\nControlla la tua API key.`}]); setBusy(false); return; }
-      const txt = d.content?.map(c => c.text||"").join("") || "Errore!";
+      if (d.error) {
+        setMsgs([...nm, {
+          role: "assistant",
+          content: `Errore API: ${d.error.message}\n\nControlla la tua API key.`
+        }]);
+        setBusy(false);
+        return;
+      }
+      const txt = d.content?.map(c => c.text || "").join("") || "Errore!";
       const p = parse(txt);
-      if (p) { setPlan(p); setDay(0); savePlan(p); }
+      if (p) {
+        setPlan(p);
+        setDay(0);
+        savePlan(p);
+      }
       const show = txt.replace(/```json[\s\S]*?```/g, p ? "\n\n✅ Scheda generata e salvata! Tocca 'Scheda' per vederla." : "").trim();
-      setMsgs([...nm, {role:"assistant", content:show}]);
-    } catch(e) { setMsgs([...nm, {role:"assistant", content:"Errore connessione. Riprova!"}]); }
+      setMsgs([...nm, {
+        role: "assistant",
+        content: show
+      }]);
+    } catch (e) {
+      setMsgs([...nm, {
+        role: "assistant",
+        content: "Errore connessione. Riprova!"
+      }]);
+    }
     setBusy(false);
   };
-
-  const handleTimer = (cfg) => setActiveTimer(cfg);
+  const handleTimer = cfg => setActiveTimer(cfg);
   const closeTimer = () => setActiveTimer(null);
 
   // ─── KEY SETUP ──────────────────────────────────────────────────────────────
-  if (!keySet) return (
-    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
-      <div style={{ maxWidth:400, width:"100%" }}>
-        <div style={{ textAlign:"center", marginBottom:24 }}>
-          <div style={{ fontSize:28, fontWeight:700 }}><span style={{ color:C.accent }}>●</span> IRON COACH</div>
-          <div style={{ fontSize:11, color:C.textDim, letterSpacing:3, marginTop:4 }}>AI WORKOUT PLANNER</div>
-        </div>
-        <div style={{ background:C.card, borderRadius:16, padding:24, border:`1px solid ${C.border}` }}>
-          <div style={{ fontSize:14, fontWeight:600, marginBottom:10 }}>🔑 Anthropic API Key</div>
-          <div style={{ fontSize:12, color:C.textDim, lineHeight:1.6, marginBottom:14 }}>
-            Prendila da <strong style={{ color:C.text }}>console.anthropic.com</strong> → API Keys.
-            Costa pochi centesimi/mese per uso personale. Salvata solo nel tuo browser.
-          </div>
-          <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
-            onKeyDown={e => e.key==="Enter" && apiKey.trim() && (setKey(apiKey.trim()), setKeySet(true))}
-            placeholder="sk-ant-..."
-            style={{ width:"100%", padding:"12px 14px", background:C.surface, border:`1px solid ${C.border}`, borderRadius:10, color:C.text, fontSize:14, fontFamily:"inherit", marginBottom:12 }} />
-          <button onClick={() => { if(apiKey.trim()){ setKey(apiKey.trim()); setKeySet(true); }}} disabled={!apiKey.trim()}
-            style={{ width:"100%", padding:"13px", borderRadius:10, background:apiKey.trim()?C.accent:C.surface, color:apiKey.trim()?C.bg:C.textDim, border:"none", fontWeight:700, fontSize:15, cursor:apiKey.trim()?"pointer":"default" }}>
-            Inizia 🏋️
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  if (!keySet) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      minHeight: "100vh",
+      background: C.bg,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 400,
+      width: "100%"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      marginBottom: 24
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 28,
+      fontWeight: 700
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.accent
+    }
+  }, "\u25CF"), " IRON COACH"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.textDim,
+      letterSpacing: 3,
+      marginTop: 4
+    }
+  }, "AI WORKOUT PLANNER")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.card,
+      borderRadius: 16,
+      padding: 24,
+      border: `1px solid ${C.border}`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 14,
+      fontWeight: 600,
+      marginBottom: 10
+    }
+  }, "\uD83D\uDD11 Anthropic API Key"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.textDim,
+      lineHeight: 1.6,
+      marginBottom: 14
+    }
+  }, "Prendila da ", /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: C.text
+    }
+  }, "console.anthropic.com"), " \u2192 API Keys. Costa pochi centesimi/mese per uso personale. Salvata solo nel tuo browser."), /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    value: apiKey,
+    onChange: e => setApiKey(e.target.value),
+    onKeyDown: e => e.key === "Enter" && apiKey.trim() && (setKey(apiKey.trim()), setKeySet(true)),
+    placeholder: "sk-ant-...",
+    style: {
+      width: "100%",
+      padding: "12px 14px",
+      background: C.surface,
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      color: C.text,
+      fontSize: 14,
+      fontFamily: "inherit",
+      marginBottom: 12
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      if (apiKey.trim()) {
+        setKey(apiKey.trim());
+        setKeySet(true);
+      }
+    },
+    disabled: !apiKey.trim(),
+    style: {
+      width: "100%",
+      padding: "13px",
+      borderRadius: 10,
+      background: apiKey.trim() ? C.accent : C.surface,
+      color: apiKey.trim() ? C.bg : C.textDim,
+      border: "none",
+      fontWeight: 700,
+      fontSize: 15,
+      cursor: apiKey.trim() ? "pointer" : "default"
+    }
+  }, "Inizia \uD83C\uDFCB\uFE0F"))));
 
   // ─── MAIN VIEW ──────────────────────────────────────────────────────────────
-  return (
-    <div style={{ minHeight:"100vh", background:C.bg, color:C.text, maxWidth:480, margin:"0 auto", display:"flex", flexDirection:"column" }}>
-
-      {/* OVERLAYS */}
-      {activeTimer && (
-        <TimerOverlay
-          sec={activeTimer.sec}
-          label={activeTimer.label}
-          color={activeTimer.color}
-          onDone={() => { if (activeTimer.onDone) activeTimer.onDone(); closeTimer(); }}
-          onSkip={() => { if (activeTimer.onDone) activeTimer.onDone(); closeTimer(); }}
-        />
-      )}
-      {showSaved && <SavedPanel onClose={() => setShowSaved(false)} onLoad={(p) => { setPlan(p); setDay(0); setView("workout"); }} />}
-
-      {/* HEADER */}
-      <div style={{ padding:"12px 16px", borderBottom:`1px solid ${C.border}`, background:C.surface, position:"sticky", top:0, zIndex:100 }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
-          <div>
-            <div style={{ fontSize:17, fontWeight:700 }}><span style={{ color:C.accent }}>●</span> IRON COACH</div>
-            <div style={{ fontSize:10, color:C.textDim, letterSpacing:2 }}>AI WORKOUT PLANNER</div>
-          </div>
-          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-            {dbLoading && <div style={{ width:16, height:16, border:`2px solid ${C.accent}`, borderTopColor:"transparent", borderRadius:"50%", animation:"spin 0.8s linear infinite" }} />}
-            {dbError && <span style={{ fontSize:10, color:C.warning }}>⚠ DB offline</span>}
-            {!dbLoading && !dbError && <span style={{ fontSize:10, color:C.textDim }}>{exercises.length} esercizi</span>}
-            <button onClick={() => setShowSaved(true)}
-              style={{ padding:"5px 11px", borderRadius:8, background:C.card, border:`1px solid ${C.border}`, color:C.textDim, fontSize:12, cursor:"pointer", fontWeight:600 }}>
-              📋 Salvate
-            </button>
-          </div>
-        </div>
-        <div style={{ display:"flex", gap:4 }}>
-          {["chat","workout"].map(t => (
-            <button key={t} onClick={() => setView(t)}
-              style={{ flex:1, padding:"8px 0", borderRadius:10, background:view===t?C.accent:"transparent", color:view===t?C.bg:C.textDim, border:view===t?"none":`1px solid ${C.border}`, fontWeight:700, fontSize:13, cursor:"pointer", opacity:t==="workout"&&!plan?0.35:1 }}>
-              {t==="chat" ? "💬 Chat" : "🏋️ Scheda"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* CHAT VIEW */}
-      {view==="chat" && (
-        <div style={{ flex:1, display:"flex", flexDirection:"column" }}>
-          <div style={{ flex:1, overflow:"auto", padding:"12px 12px 110px" }}>
-            {msgs.map((m,i) => <Bubble key={i} msg={m} />)}
-            {busy && (
-              <div style={{ display:"flex", gap:6, padding:"10px 16px" }}>
-                {[0,1,2].map(i => <div key={i} style={{ width:8, height:8, borderRadius:"50%", background:C.accent, animation:`dot 1s ${i*0.2}s infinite` }} />)}
-              </div>
-            )}
-            <div ref={endRef} />
-          </div>
-          <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, padding:"8px 12px 16px", background:`linear-gradient(transparent, ${C.bg} 25%)` }}>
-            <div style={{ display:"flex", gap:8, background:C.surface, borderRadius:14, border:`1px solid ${C.border}`, padding:5 }}>
-              <textarea value={inp} onChange={e => setInp(e.target.value)}
-                onKeyDown={e => { if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); send(); }}}
-                placeholder="Scrivi al coach…" rows={1}
-                style={{ flex:1, background:"transparent", border:"none", color:C.text, fontSize:14, padding:"10px 12px", resize:"none", lineHeight:1.4, fontFamily:"inherit" }} />
-              <button onClick={send} disabled={!inp.trim()||busy}
-                style={{ width:44, height:44, borderRadius:10, flexShrink:0, background:inp.trim()?C.accent:C.card, color:inp.trim()?C.bg:C.textDim, border:"none", fontSize:18, cursor:inp.trim()?"pointer":"default", display:"flex", alignItems:"center", justifyContent:"center" }}>↑</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* WORKOUT VIEW */}
-      {view==="workout" && (
-        <div style={{ flex:1, overflow:"auto", padding:"12px 12px 40px" }}>
-          {!plan ? (
-            <div style={{ textAlign:"center", padding:"60px 20px", color:C.textDim }}>
-              <div style={{ fontSize:48, marginBottom:14 }}>🏋️</div>
-              <div style={{ fontSize:16, fontWeight:600, marginBottom:6, color:C.text }}>Nessuna scheda attiva</div>
-              <div style={{ fontSize:13, marginBottom:16 }}>Chatta col Coach oppure carica una scheda salvata</div>
-              <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
-                <button onClick={() => setView("chat")}
-                  style={{ padding:"11px 20px", background:C.accent, color:C.bg, border:"none", borderRadius:10, fontWeight:700, cursor:"pointer", fontSize:14 }}>
-                  💬 Chat
-                </button>
-                <button onClick={() => setShowSaved(true)}
-                  style={{ padding:"11px 20px", background:C.card, color:C.text, border:`1px solid ${C.border}`, borderRadius:10, fontWeight:700, cursor:"pointer", fontSize:14 }}>
-                  📋 Salvate
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div style={{ marginBottom:14 }}>
-                <div style={{ fontSize:19, fontWeight:700 }}>{plan.name}</div>
-                <div style={{ fontSize:12, color:C.textDim, marginTop:2 }}>{plan.weeks} sett. · {plan.days?.length} giorni</div>
-              </div>
-
-              {/* Day selector */}
-              <div style={{ display:"flex", gap:5, overflowX:"auto", marginBottom:14, paddingBottom:4 }}>
-                {plan.days?.map((d,i) => (
-                  <button key={i} onClick={() => setDay(i)}
-                    style={{ padding:"7px 13px", borderRadius:9, whiteSpace:"nowrap", flexShrink:0, background:day===i?C.accent:C.card, color:day===i?C.bg:C.textDim, border:day===i?"none":`1px solid ${C.border}`, fontWeight:600, fontSize:12, cursor:"pointer" }}>
-                    {(d.day||`G${i+1}`).replace(/Giorno \d+ - /,"")||`G${i+1}`}
-                  </button>
-                ))}
-              </div>
-
-              {plan.days?.[day] && (
-                <>
-                  <div style={{ padding:"9px 13px", background:C.accentGlow, borderRadius:10, marginBottom:12, border:`1px solid ${C.accent}20` }}>
-                    <div style={{ fontSize:15, fontWeight:700 }}>{plan.days[day].day}</div>
-                    <div style={{ fontSize:12, color:C.textDim, marginTop:2 }}>{plan.days[day].focus}</div>
-                  </div>
-
-                  <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
-                    {plan.days[day].exercises?.map((ex,i) => {
-                      const data = findExercise(exercises, ex.name || ex.id);
-                      return <ExCard key={`${ex.name||ex.id}-${i}`} ex={ex} data={data} idx={i} onStartTimer={handleTimer} />;
-                    })}
-                  </div>
-                </>
-              )}
-
-              <button onClick={() => setView("chat")}
-                style={{ width:"100%", marginTop:18, padding:"12px", background:C.surface, border:`1px solid ${C.border}`, borderRadius:12, color:C.textDim, fontWeight:600, fontSize:13, cursor:"pointer" }}>
-                💬 Modifica in chat
-              </button>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      minHeight: "100vh",
+      background: C.bg,
+      color: C.text,
+      maxWidth: 480,
+      margin: "0 auto",
+      display: "flex",
+      flexDirection: "column"
+    }
+  }, activeTimer && /*#__PURE__*/React.createElement(TimerOverlay, {
+    sec: activeTimer.sec,
+    label: activeTimer.label,
+    color: activeTimer.color,
+    onDone: () => {
+      if (activeTimer.onDone) activeTimer.onDone();
+      closeTimer();
+    },
+    onSkip: () => {
+      if (activeTimer.onDone) activeTimer.onDone();
+      closeTimer();
+    }
+  }), showSaved && /*#__PURE__*/React.createElement(SavedPanel, {
+    onClose: () => setShowSaved(false),
+    onLoad: p => {
+      setPlan(p);
+      setDay(0);
+      setView("workout");
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "12px 16px",
+      borderBottom: `1px solid ${C.border}`,
+      background: C.surface,
+      position: "sticky",
+      top: 0,
+      zIndex: 100
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 17,
+      fontWeight: 700
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.accent
+    }
+  }, "\u25CF"), " IRON COACH"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: C.textDim,
+      letterSpacing: 2
+    }
+  }, "AI WORKOUT PLANNER")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8
+    }
+  }, dbLoading && /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 16,
+      height: 16,
+      border: `2px solid ${C.accent}`,
+      borderTopColor: "transparent",
+      borderRadius: "50%",
+      animation: "spin 0.8s linear infinite"
+    }
+  }), dbError && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      color: C.warning
+    }
+  }, "\u26A0 DB offline"), !dbLoading && !dbError && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      color: C.textDim
+    }
+  }, exercises.length, " esercizi"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowSaved(true),
+    style: {
+      padding: "5px 11px",
+      borderRadius: 8,
+      background: C.card,
+      border: `1px solid ${C.border}`,
+      color: C.textDim,
+      fontSize: 12,
+      cursor: "pointer",
+      fontWeight: 600
+    }
+  }, "\uD83D\uDCCB Salvate"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 4
+    }
+  }, ["chat", "workout"].map(t => /*#__PURE__*/React.createElement("button", {
+    key: t,
+    onClick: () => setView(t),
+    style: {
+      flex: 1,
+      padding: "8px 0",
+      borderRadius: 10,
+      background: view === t ? C.accent : "transparent",
+      color: view === t ? C.bg : C.textDim,
+      border: view === t ? "none" : `1px solid ${C.border}`,
+      fontWeight: 700,
+      fontSize: 13,
+      cursor: "pointer",
+      opacity: t === "workout" && !plan ? 0.35 : 1
+    }
+  }, t === "chat" ? "💬 Chat" : "🏋️ Scheda")))), view === "chat" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      display: "flex",
+      flexDirection: "column"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      overflow: "auto",
+      padding: "12px 12px 110px"
+    }
+  }, msgs.map((m, i) => /*#__PURE__*/React.createElement(Bubble, {
+    key: i,
+    msg: m
+  })), busy && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      padding: "10px 16px"
+    }
+  }, [0, 1, 2].map(i => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      width: 8,
+      height: 8,
+      borderRadius: "50%",
+      background: C.accent,
+      animation: `dot 1s ${i * 0.2}s infinite`
+    }
+  }))), /*#__PURE__*/React.createElement("div", {
+    ref: endRef
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      bottom: 0,
+      left: "50%",
+      transform: "translateX(-50%)",
+      width: "100%",
+      maxWidth: 480,
+      padding: "8px 12px 16px",
+      background: `linear-gradient(transparent, ${C.bg} 25%)`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      background: C.surface,
+      borderRadius: 14,
+      border: `1px solid ${C.border}`,
+      padding: 5
+    }
+  }, /*#__PURE__*/React.createElement("textarea", {
+    value: inp,
+    onChange: e => setInp(e.target.value),
+    onKeyDown: e => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    },
+    placeholder: "Scrivi al coach\u2026",
+    rows: 1,
+    style: {
+      flex: 1,
+      background: "transparent",
+      border: "none",
+      color: C.text,
+      fontSize: 14,
+      padding: "10px 12px",
+      resize: "none",
+      lineHeight: 1.4,
+      fontFamily: "inherit"
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: send,
+    disabled: !inp.trim() || busy,
+    style: {
+      width: 44,
+      height: 44,
+      borderRadius: 10,
+      flexShrink: 0,
+      background: inp.trim() ? C.accent : C.card,
+      color: inp.trim() ? C.bg : C.textDim,
+      border: "none",
+      fontSize: 18,
+      cursor: inp.trim() ? "pointer" : "default",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }
+  }, "\u2191")))), view === "workout" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      overflow: "auto",
+      padding: "12px 12px 40px"
+    }
+  }, !plan ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: "60px 20px",
+      color: C.textDim
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 48,
+      marginBottom: 14
+    }
+  }, "\uD83C\uDFCB\uFE0F"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 16,
+      fontWeight: 600,
+      marginBottom: 6,
+      color: C.text
+    }
+  }, "Nessuna scheda attiva"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      marginBottom: 16
+    }
+  }, "Chatta col Coach oppure carica una scheda salvata"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      justifyContent: "center"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setView("chat"),
+    style: {
+      padding: "11px 20px",
+      background: C.accent,
+      color: C.bg,
+      border: "none",
+      borderRadius: 10,
+      fontWeight: 700,
+      cursor: "pointer",
+      fontSize: 14
+    }
+  }, "\uD83D\uDCAC Chat"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowSaved(true),
+    style: {
+      padding: "11px 20px",
+      background: C.card,
+      color: C.text,
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      fontWeight: 700,
+      cursor: "pointer",
+      fontSize: 14
+    }
+  }, "\uD83D\uDCCB Salvate"))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 19,
+      fontWeight: 700
+    }
+  }, plan.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.textDim,
+      marginTop: 2
+    }
+  }, plan.weeks, " sett. \xB7 ", plan.days?.length, " giorni")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 5,
+      overflowX: "auto",
+      marginBottom: 14,
+      paddingBottom: 4
+    }
+  }, plan.days?.map((d, i) => /*#__PURE__*/React.createElement("button", {
+    key: i,
+    onClick: () => setDay(i),
+    style: {
+      padding: "7px 13px",
+      borderRadius: 9,
+      whiteSpace: "nowrap",
+      flexShrink: 0,
+      background: day === i ? C.accent : C.card,
+      color: day === i ? C.bg : C.textDim,
+      border: day === i ? "none" : `1px solid ${C.border}`,
+      fontWeight: 600,
+      fontSize: 12,
+      cursor: "pointer"
+    }
+  }, (d.day || `G${i + 1}`).replace(/Giorno \d+ - /, "") || `G${i + 1}`))), plan.days?.[day] && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "9px 13px",
+      background: C.accentGlow,
+      borderRadius: 10,
+      marginBottom: 12,
+      border: `1px solid ${C.accent}20`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 15,
+      fontWeight: 700
+    }
+  }, plan.days[day].day), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.textDim,
+      marginTop: 2
+    }
+  }, plan.days[day].focus)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 7
+    }
+  }, plan.days[day].exercises?.map((ex, i) => {
+    const data = findExercise(exercises, ex.name || ex.id);
+    return /*#__PURE__*/React.createElement(ExCard, {
+      key: `${ex.name || ex.id}-${i}`,
+      ex: ex,
+      data: data,
+      idx: i,
+      onStartTimer: handleTimer
+    });
+  }))), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setView("chat"),
+    style: {
+      width: "100%",
+      marginTop: 18,
+      padding: "12px",
+      background: C.surface,
+      border: `1px solid ${C.border}`,
+      borderRadius: 12,
+      color: C.textDim,
+      fontWeight: 600,
+      fontSize: 13,
+      cursor: "pointer"
+    }
+  }, "\uD83D\uDCAC Modifica in chat"))));
 }
+ReactDOM.createRoot(document.getElementById("app")).render(/*#__PURE__*/React.createElement(App, null));
 
-ReactDOM.createRoot(document.getElementById("app")).render(<App />);
 </script>
 </body>
 </html>
