@@ -5,20 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#090910">
-  <title>IRON COACH - AI Workout Planner</title>
-  <link rel="manifest" href="data:application/json,{&quot;name&quot;:&quot;IRON COACH&quot;,&quot;short_name&quot;:&quot;IronCoach&quot;,&quot;start_url&quot;:&quot;.&quot;,&quot;display&quot;:&quot;standalone&quot;,&quot;background_color&quot;:&quot;%23090910&quot;,&quot;theme_color&quot;:&quot;%23090910&quot;}">
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#080810">
+  <title>IRON COACH</title>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --bg: #080810;
+      --surface: #0f0f1a;
+      --card: #13131f;
+      --border: #1e1e2e;
+      --text: #e8e8f0;
+      --dim: #6b6b8a;
+      --accent: #c8f135;
+      --accent2: #7c3aed;
+      --glow: rgba(200,241,53,0.08);
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #090910; color: #e8e8f0; font-family: 'DM Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; -webkit-font-smoothing: antialiased; }
     input:focus, textarea:focus { outline: none; }
-    ::-webkit-scrollbar { width: 3px; }
-    ::-webkit-scrollbar-thumb { background: #252538; border-radius: 3px; }
-    @keyframes dot { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04); } }
-    .fade-in { animation: fadeIn 0.3s ease; }
+    ::-webkit-scrollbar { width: 2px; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes pulse { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .fade-up { animation: fadeUp 0.3s ease forwards; }
   </style>
 </head>
 <body>
@@ -31,606 +41,661 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
-// ─── VERIFIED IMAGE PATHS ────────────────────────────────────────────────────
-const G = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/";
-const im = (f) => [G + f + "/0.jpg", G + f + "/1.jpg"];
+const ANTHROPIC_KEY_STORAGE = 'ic_anthropic_key';
+const RAPIDAPI_KEY_STORAGE = 'ic_rapidapi_key';
 
-const EXERCISES = [
-  { id:"ex01", name:"Barbell Bench Press", bp:"chest", eq:"barbell", img:im("Barbell_Bench_Press_-_Medium_Grip"), ins:["Sdraiati piatto, presa più larga delle spalle.","Abbassa il bilanciere al centro del petto.","Pressa fino all'estensione completa."] },
-  { id:"ex02", name:"Incline Dumbbell Press", bp:"chest", eq:"dumbbell", img:im("Incline_Dumbbell_Press"), ins:["Panca inclinata 30-45°.","Pressa i manubri verso l'alto.","Abbassa con controllo."] },
-  { id:"ex03", name:"Push Up", bp:"chest", eq:"body weight", img:im("Pushups"), ins:["Plank, mani larghezza spalle.","Abbassa il petto a terra.","Spingi verso l'alto."] },
-  { id:"ex04", name:"Chest Dip", bp:"chest", eq:"body weight", img:im("Dips_-_Chest_Version"), ins:["Sbarre parallele, corpo inclinato avanti.","Abbassa fino a braccia parallele.","Spingi verso l'alto."] },
-  { id:"ex05", name:"Cable Crossover", bp:"chest", eq:"cable", img:im("Cable_Crossover"), ins:["In piedi tra i cavi.","Unisci le mani in arco.","Spremi, ritorna lentamente."] },
-  { id:"ex06", name:"Dumbbell Fly", bp:"chest", eq:"dumbbell", img:im("Dumbbell_Flyes"), ins:["Sdraiato su panca, manubri sopra.","Apri le braccia larghissimo.","Ritorna, spremi il petto."] },
-  { id:"ex07", name:"Pull Up", bp:"back", eq:"body weight", img:im("Pullups"), ins:["Presa prona.","Mento sopra la sbarra.","Abbassa con controllo."] },
-  { id:"ex08", name:"Barbell Row", bp:"back", eq:"barbell", img:im("Bent_Over_Barbell_Row"), ins:["Piega dai fianchi.","Tira il bilanciere al petto basso.","Abbassa con controllo."] },
-  { id:"ex09", name:"Lat Pulldown", bp:"back", eq:"cable", img:im("Wide-Grip_Lat_Pulldown"), ins:["Presa larga.","Tira al petto superiore.","Ritorna con controllo."] },
-  { id:"ex10", name:"Seated Cable Row", bp:"back", eq:"cable", img:im("Seated_Cable_Rows"), ins:["Seduto alla stazione.","Tira all'addome.","Spremi la schiena, ritorna."] },
-  { id:"ex11", name:"Dumbbell Row", bp:"back", eq:"dumbbell", img:im("One-Arm_Dumbbell_Row"), ins:["Ginocchio sulla panca.","Tira il manubrio verso il fianco.","Abbassa lentamente."] },
-  { id:"ex12", name:"Barbell Deadlift", bp:"back", eq:"barbell", img:im("Barbell_Deadlift"), ins:["Bilanciere su metà piede.","Schiena piatta, afferra il bilanciere.","Alzati, abbassa con controllo."] },
-  { id:"ex13", name:"Barbell Shoulder Press", bp:"shoulders", eq:"barbell", img:im("Barbell_Shoulder_Press"), ins:["Bilanciere alle spalle.","Pressa in overhead.","Abbassa con controllo."] },
-  { id:"ex14", name:"Lateral Raise", bp:"shoulders", eq:"dumbbell", img:im("Side_Lateral_Raise"), ins:["Manubri ai fianchi.","Alza all'altezza delle spalle.","Abbassa lentamente."] },
-  { id:"ex15", name:"Dumbbell Shoulder Press", bp:"shoulders", eq:"dumbbell", img:im("Dumbbell_Shoulder_Press"), ins:["Manubri alle spalle.","Pressa fino all'estensione.","Abbassa con controllo."] },
-  { id:"ex16", name:"Front Raise", bp:"shoulders", eq:"dumbbell", img:im("Front_Dumbbell_Raise"), ins:["Davanti alle cosce.","Alza all'altezza delle spalle.","Abbassa, alterna."] },
-  { id:"ex17", name:"Face Pull", bp:"shoulders", eq:"cable", img:im("Face_Pull"), ins:["Cavo all'altezza del viso.","Tira al viso, gomiti alti.","Spremi i deltoidi posteriori."] },
-  { id:"ex18", name:"Barbell Squat", bp:"legs", eq:"barbell", img:im("Barbell_Squat"), ins:["Bilanciere sulla parte alta della schiena.","Scendi a parallela.","Spingi attraverso i talloni."] },
-  { id:"ex19", name:"Leg Press", bp:"legs", eq:"machine", img:im("Leg_Press"), ins:["Piedi larghezza spalle sulla piattaforma.","Abbassa a 90°.","Spingi verso l'alto."] },
-  { id:"ex20", name:"Romanian Deadlift", bp:"legs", eq:"barbell", img:im("Romanian_Deadlift"), ins:["Tieni ai fianchi.","Piega, lieve flessione al ginocchio.","Abbassa fino allo stretch, ritorna."] },
-  { id:"ex21", name:"Dumbbell Lunge", bp:"legs", eq:"dumbbell", img:im("Dumbbell_Lunges"), ins:["Fai un passo avanti.","Abbassa il ginocchio posteriore.","Spingi via, alterna."] },
-  { id:"ex22", name:"Lying Leg Curl", bp:"legs", eq:"machine", img:im("Lying_Leg_Curls"), ins:["Sdraiato a faccia in giù.","Curla verso i glutei.","Abbassa lentamente."] },
-  { id:"ex23", name:"Standing Calf Raise", bp:"legs", eq:"body weight", img:im("Standing_Calf_Raises"), ins:["Piede sul bordo.","Alza i talloni.","Abbassa sotto la piattaforma."] },
-  { id:"ex24", name:"Leg Extension", bp:"legs", eq:"machine", img:im("Leg_Extensions"), ins:["Caviglie dietro il cuscinetto.","Estendi le gambe completamente.","Abbassa con controllo."] },
-  { id:"ex25", name:"Hip Thrust", bp:"legs", eq:"barbell", img:im("Barbell_Hip_Thrust"), ins:["Schiena alta sulla panca, bilanciere sui fianchi.","Spingi i fianchi verso l'alto.","Spremi i glutei, abbassa."] },
-  { id:"ex26", name:"Bulgarian Split Squat", bp:"legs", eq:"dumbbell", img:im("Dumbbell_Lunges"), ins:["Piede posteriore su panca.","Abbassa in affondo.","Spingi su attraverso il tallone anteriore."] },
-  { id:"ex27", name:"Barbell Curl", bp:"arms", eq:"barbell", img:im("Barbell_Curl"), ins:["Presa supina.","Curla alle spalle.","Abbassa lentamente."] },
-  { id:"ex28", name:"Tricep Pushdown", bp:"arms", eq:"cable", img:im("Triceps_Pushdown"), ins:["Gomiti ai fianchi.","Spingi fino all'estensione completa.","Ritorna con controllo."] },
-  { id:"ex29", name:"Hammer Curl", bp:"arms", eq:"dumbbell", img:im("Hammer_Curls"), ins:["Presa neutra.","Curla alle spalle.","Abbassa lentamente."] },
-  { id:"ex30", name:"Concentration Curl", bp:"arms", eq:"dumbbell", img:im("Concentration_Curls"), ins:["Seduto, gomito sulla coscia interna.","Curla verso l'alto.","Abbassa fino all'estensione."] },
-  { id:"ex31", name:"Tricep Dips", bp:"arms", eq:"body weight", img:im("Dips_-_Triceps_Version"), ins:["Mani sulla panca dietro.","Abbassa il corpo.","Spingi verso l'alto."] },
-  { id:"ex32", name:"Skull Crusher", bp:"arms", eq:"barbell", img:im("EZ-Bar_Skullcrusher"), ins:["Sdraiato su panca, EZ bar sopra.","Abbassa alla fronte.","Estendi verso l'alto."] },
-  { id:"ex33", name:"Plank", bp:"core", eq:"body weight", img:im("Plank"), ins:["Avambracci a terra.","Corpo dritto, core contratto.","Tieni, respira regolarmente."], isTime:true },
-  { id:"ex34", name:"Hanging Leg Raise", bp:"core", eq:"body weight", img:im("Hanging_Leg_Raise"), ins:["Appeso alla sbarra.","Alza le gambe a 90°.","Abbassa con controllo."] },
-  { id:"ex35", name:"Russian Twist", bp:"core", eq:"body weight", img:im("Russian_Twist"), ins:["Inclinati leggermente.","Ruota il busto da lato a lato.","Core contratto."] },
-  { id:"ex36", name:"Cable Crunch", bp:"core", eq:"cable", img:im("Cable_Crunch"), ins:["Inginocchiati al cavo.","Flessione verso il basso.","Ritorna con controllo."] },
-  { id:"ex37", name:"Mountain Climbers", bp:"full body", eq:"body weight", img:im("Mountain_Climbers"), ins:["Posizione plank.","Porta le ginocchia alternando.","Veloce, fianchi stabili."], isTime:true },
-  { id:"ex38", name:"Burpee", bp:"full body", eq:"body weight", img:im("Pushups"), ins:["Scendi in push-up.","Spingi su.","Salta i piedi avanti, salta in alto."], isTime:true },
-  { id:"ex39", name:"Jump Squat", bp:"legs", eq:"body weight", img:im("Barbell_Squat"), ins:["Scendi in squat.","Esplodi in salto.","Atterra morbido, ripeti."], isTime:true },
-  { id:"ex40", name:"High Knees", bp:"full body", eq:"body weight", img:im("Jogging_Treadmill"), ins:["Corri sul posto.","Ginocchia alte.","Braccia in movimento."], isTime:true },
-  // CARDIO
-  { id:"cardio_walk", name:"Camminata", bp:"cardio", eq:"treadmill/outdoor", img:im("Jogging_Treadmill"), ins:["Ritmo costante, postura eretta.","Dondola le braccia naturalmente.","Respira regolarmente."], isTime:true },
-  { id:"cardio_run", name:"Corsa", bp:"cardio", eq:"treadmill/outdoor", img:im("Jogging_Treadmill"), ins:["Ritmo sostenuto, atterra sul metatarso.","Busto leggermente inclinato avanti.","Respira a ritmo con i passi."], isTime:true },
-  { id:"cardio_bike", name:"Cyclette / Bike", bp:"cardio", eq:"bike", img:im("Jogging_Treadmill"), ins:["Sella regolata all'altezza del fianco.","Ritmo costante 60-80 RPM.","Mantieni schiena dritta."], isTime:true },
-  { id:"cardio_row", name:"Rowing / Rower", bp:"cardio", eq:"rower", img:im("Seated_Cable_Rows"), ins:["Spingi con le gambe prima, poi tira con le braccia.","Schiena dritta, non arrotolare.","Ritmo ritmico e controllato."], isTime:true },
-  { id:"cardio_rope", name:"Corda (Jump Rope)", bp:"cardio", eq:"jump rope", img:im("Mountain_Climbers"), ins:["Polsi a fare il lavoro, non le braccia.","Saltella leggero sulle punte.","Guarda avanti."], isTime:true },
-  { id:"cardio_elliptic", name:"Ellittica", bp:"cardio", eq:"elliptical", img:im("Jogging_Treadmill"), ins:["Movimento fluido, resistenza moderata.","Usa anche le braccia.","Respira regolarmente."], isTime:true },
-  // MOBILITÀ
-  { id:"mob_cat_cow", name:"Cat-Cow Stretch", bp:"mobility", eq:"body weight", img:im("Cat_Stretch"), ins:["A quattro zampe.","Inarca la schiena (cat), abbassa (cow).","Scorri col respiro, 10 reps."] },
-  { id:"mob_world", name:"World's Greatest Stretch", bp:"mobility", eq:"body weight", img:im("Dumbbell_Lunges"), ins:["Affondo profondo.","Ruota il busto, alza il braccio.","Tieni 3s, cambia lato."], isTime:true },
-  { id:"mob_9090", name:"90/90 Hip Stretch", bp:"mobility", eq:"body weight", img:im("Butterfly"), ins:["Entrambe le gambe a 90 gradi.","Inclinati sulla gamba anteriore.","Tieni 30s, cambia."], isTime:true },
-  { id:"mob_thoracic", name:"Thoracic Rotation", bp:"mobility", eq:"body weight", img:im("Russian_Twist"), ins:["Sdraiato di fianco, ginocchia sovrapposte.","Ruota il busto superiore, apri il petto.","5 per lato."] },
-  { id:"mob_pigeon", name:"Pigeon Stretch", bp:"mobility", eq:"body weight", img:im("Butterfly"), ins:["Un ginocchio avanti.","Gamba posteriore estesa.","Inclinati in avanti, tieni 45s per lato."], isTime:true },
-  { id:"mob_couch", name:"Couch Stretch", bp:"mobility", eq:"body weight", img:im("Dumbbell_Lunges"), ins:["Piede posteriore contro il muro.","Spingi i fianchi in avanti.","Tieni 45s per lato."], isTime:true },
-  { id:"mob_foam", name:"Foam Roll Thoracic", bp:"mobility", eq:"foam roller", img:im("Plank"), ins:["Rullo alla schiena superiore.","Braccia incrociate sul petto.","Rotola lentamente su e giù."], isTime:true },
-  { id:"mob_dislocate", name:"Shoulder Dislocates", bp:"mobility", eq:"band", img:im("Side_Lateral_Raise"), ins:["Tieni elastico larghissimo.","Sopra la testa e dietro la schiena.","Ritorna lentamente, braccia dritte."] },
-];
+// ─── SYSTEM PROMPT ────────────────────────────────────────────────────────────
+const SYSTEM = `Sei IRON COACH, un AI coach fitness d'élite. Parli italiano, sei diretto e motivante.
 
-const C = { bg:"#090910", surface:"#111119", card:"#19192a", accent:"#00e68a", accentGlow:"rgba(0,230,138,0.1)", text:"#e8e8f0", textDim:"#6e6e88", border:"#252538", warning:"#ffa726", info:"#64b5f6", chatU:"#162040", chatA:"#0d1e14" };
+Quando l'utente ti chiede una scheda, devi generare un piano strutturato in JSON.
+Raccogli sempre: obiettivo, giorni/settimana, attrezzatura disponibile, livello, eventuali limitazioni fisiche.
 
-// ─── LOCAL STORAGE HELPERS ────────────────────────────────────────────────────
-const getKey = () => localStorage.getItem("ic_anthropic_key") || "";
-const setKey = (k) => localStorage.setItem("ic_anthropic_key", k);
-const getSavedWorkouts = () => { try { return JSON.parse(localStorage.getItem("ic_saved_workouts") || "[]"); } catch(e){ return []; } };
-const saveWorkout = (plan) => {
-  const list = getSavedWorkouts();
-  const entry = { id: Date.now(), name: plan.name, date: new Date().toLocaleDateString("it-IT"), plan };
-  list.unshift(entry);
-  localStorage.setItem("ic_saved_workouts", JSON.stringify(list.slice(0, 20))); // max 20
-  return list;
-};
-const deleteWorkout = (id) => {
-  const list = getSavedWorkouts().filter(w => w.id !== id);
-  localStorage.setItem("ic_saved_workouts", JSON.stringify(list));
-  return list;
-};
+Quando hai abbastanza info, genera la scheda in questo formato JSON esatto (dentro backtick json):
 
-// ─── EXPORT / IMPORT HELPERS ──────────────────────────────────────────────────
-const exportPlanText = (plan) => {
-  let t = `💪 ${plan.name} (${plan.weeks} settimane)\n\n`;
-  plan.days?.forEach(d => {
-    t += `📅 ${d.day}\n🎯 ${d.focus}\n`;
-    d.exercises?.forEach(ex => {
-      if (ex.duration) {
-        t += `  • ${ex.name}: ${ex.sets}x${Math.floor(ex.duration/60)}min${ex.duration%60?ex.duration%60+"s":""} | riposo ${ex.rest||60}s\n`;
-      } else {
-        t += `  • ${ex.name}: ${ex.sets}x${ex.reps} ${ex.weight||""} | riposo ${ex.rest||90}s\n`;
+\`\`\`json
+{
+  "workout_plan": {
+    "title": "Nome scheda",
+    "goal": "obiettivo",
+    "days_per_week": 4,
+    "duration_weeks": 8,
+    "days": [
+      {
+        "day": "Giorno 1 - Push",
+        "focus": "Petto, Spalle, Tricipiti",
+        "exercises": [
+          {
+            "search_term": "barbell bench press",
+            "sets": 4,
+            "reps": "8-10",
+            "rest_seconds": 90,
+            "notes": "Presa media, busto fermo"
+          }
+        ]
+      }
+    ]
+  }
+}
+\`\`\`
+
+IMPORTANTE per search_term: usa termini in INGLESE, semplici e precisi, che matchino nomi di esercizi reali.
+Esempi buoni: "squat", "deadlift", "bench press", "pull up", "dumbbell curl", "hip thrust", "plank", "box jump", "hip flexor stretch", "pigeon pose stretch", "lateral raise".
+Per mobilità usa: "stretch", "mobility", "flexibility" nei termini.
+Per pliometria usa: "jump", "plyometric", "box jump", "burpee".
+
+Ogni giorno max 6-8 esercizi. Sii specifico sulle note tecniche.`;
+
+// ─── EXERCISEDB API ───────────────────────────────────────────────────────────
+async function searchExercise(term, rapidApiKey) {
+  try {
+    const encoded = encodeURIComponent(term.toLowerCase());
+    const res = await fetch(`https://exercisedb.p.rapidapi.com/exercises/name/${encoded}?limit=3&offset=0`, {
+      headers: {
+        'x-rapidapi-host': 'exercisedb.p.rapidapi.com',
+        'x-rapidapi-key': rapidApiKey
       }
     });
-    t += "\n";
-  });
-  t += `---\nGenerata con IRON COACH AI`;
-  return t;
-};
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0) return data[0];
+    return null;
+  } catch(e) {
+    return null;
+  }
+}
 
-const importPlanFromText = (text) => {
-  // Try to parse JSON embedded in text
-  const m = text.match(/```json\s*([\s\S]*?)\s*```/);
-  if (m) { try { return JSON.parse(m[1]).workout_plan || null; } catch(e){} }
-  // Raw JSON
-  try { const p = JSON.parse(text); return p.workout_plan || p; } catch(e){}
-  return null;
-};
+// ─── COMPONENTS ──────────────────────────────────────────────────────────────
 
-// ─── TIMER (FULL SCREEN) ─────────────────────────────────────────────────────
-function Timer({ sec, mode, label, onDone, onSkip }) {
-  const [r, setR] = useState(sec);
-  const total = useRef(sec);
-  const isWork = mode === "work";
-  useEffect(() => {
-    if (r <= 0) { onDone(); return; }
-    const t = setTimeout(() => setR(x => x - 1), 1000);
-    return () => clearTimeout(t);
-  }, [r]);
-  const rd = 54, ci = 2 * Math.PI * rd;
-  const prog = isWork ? r / total.current : 1 - r / total.current;
-  const color = isWork ? C.info : C.accent;
+function Spinner({ size = 20, color = 'var(--accent)' }) {
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", zIndex:2000, gap:16 }}>
-      <div style={{ fontSize:11, color, letterSpacing:3, fontWeight:700 }}>{isWork ? "⏱ WORK" : "💤 RIPOSO"}</div>
-      {label && <div style={{ fontSize:13, color:C.textDim, marginTop:-8 }}>{label}</div>}
-      <svg width="210" height="210" viewBox="0 0 120 120">
-        <circle cx="60" cy="60" r={rd} fill="none" stroke={C.border} strokeWidth="5" />
-        <circle cx="60" cy="60" r={rd} fill="none" stroke={color} strokeWidth="5"
-          strokeDasharray={ci} strokeDashoffset={ci * prog}
-          strokeLinecap="round" transform="rotate(-90 60 60)"
-          style={{ transition:"stroke-dashoffset 1s linear" }} />
-        <text x="60" y="55" textAnchor="middle" fill={C.text} fontSize="32" fontWeight="700">
-          {Math.floor(r/60)}:{(r%60).toString().padStart(2,"0")}
-        </text>
-        <text x="60" y="76" textAnchor="middle" fill={r<=3?color:C.textDim} fontSize="12">
-          {r<=3?(isWork?"FINISCI!":"VAI!"):(isWork?"in corso...":"respira...")}
-        </text>
-      </svg>
-      <button onClick={onSkip || onDone} style={{ padding:"10px 30px", background:"transparent", border:`1px solid ${C.border}`, borderRadius:10, color:C.textDim, cursor:"pointer", fontSize:14 }}>
-        {isWork ? "Ferma ⏹" : "Salta ⏩"}
+    <div style={{
+      width: size, height: size, border: `2px solid transparent`,
+      borderTop: `2px solid ${color}`, borderRadius: '50%',
+      animation: 'spin 0.7s linear infinite', display: 'inline-block'
+    }} />
+  );
+}
+
+function ExerciseCard({ ex, rapidApiKey }) {
+  const [exData, setExData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [sets, setSets] = useState(Array(ex.sets).fill(false));
+
+  const load = useCallback(async () => {
+    if (exData || loading) return;
+    setLoading(true);
+    const data = await searchExercise(ex.search_term, rapidApiKey);
+    setExData(data);
+    setLoading(false);
+  }, [ex.search_term, rapidApiKey, exData, loading]);
+
+  useEffect(() => { load(); }, []);
+
+  const toggleSet = (i) => {
+    const ns = [...sets];
+    ns[i] = !ns[i];
+    setSets(ns);
+  };
+
+  const completedSets = sets.filter(Boolean).length;
+  const allDone = completedSets === ex.sets;
+
+  return (
+    <div style={{
+      background: allDone ? 'rgba(200,241,53,0.05)' : 'var(--card)',
+      border: `1px solid ${allDone ? 'rgba(200,241,53,0.3)' : 'var(--border)'}`,
+      borderRadius: 14, overflow: 'hidden',
+      transition: 'all 0.2s ease'
+    }}>
+      {/* Header */}
+      <div onClick={() => setOpen(!open)} style={{
+        padding: '12px 14px', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', gap: 12
+      }}>
+        {/* GIF preview o placeholder */}
+        <div style={{
+          width: 52, height: 52, borderRadius: 10, overflow: 'hidden',
+          background: 'var(--surface)', flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          {loading ? (
+            <Spinner size={18} />
+          ) : exData?.gifUrl ? (
+            <img src={exData.gifUrl} alt={exData.name}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              onError={(e) => { e.target.style.display = 'none'; }} />
+          ) : (
+            <span style={{ fontSize: 22 }}>💪</span>
+          )}
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 13, fontWeight: 600, color: allDone ? 'var(--accent)' : 'var(--text)',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+          }}>
+            {exData?.name || ex.search_term}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
+            {ex.sets} serie × {ex.reps} rep · {ex.rest_seconds}s rest
+          </div>
+          {exData && (
+            <div style={{ fontSize: 10, color: 'var(--accent)', marginTop: 2, opacity: 0.7 }}>
+              {exData.target} · {exData.equipment}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            fontSize: 11, fontWeight: 700,
+            color: allDone ? 'var(--accent)' : 'var(--dim)'
+          }}>
+            {completedSets}/{ex.sets}
+          </div>
+          <div style={{
+            fontSize: 10, color: 'var(--dim)',
+            transform: open ? 'rotate(180deg)' : 'none',
+            transition: 'transform 0.2s'
+          }}>▼</div>
+        </div>
+      </div>
+
+      {/* Expanded */}
+      {open && (
+        <div style={{ borderTop: `1px solid var(--border)`, padding: '12px 14px' }} className="fade-up">
+          {/* GIF grande */}
+          {exData?.gifUrl && (
+            <div style={{
+              width: '100%', borderRadius: 10, overflow: 'hidden',
+              background: 'var(--surface)', marginBottom: 12,
+              display: 'flex', justifyContent: 'center'
+            }}>
+              <img src={exData.gifUrl} alt={exData.name}
+                style={{ maxHeight: 200, objectFit: 'contain' }} />
+            </div>
+          )}
+
+          {/* Note coach */}
+          {ex.notes && (
+            <div style={{
+              background: 'var(--glow)', border: '1px solid rgba(200,241,53,0.15)',
+              borderRadius: 8, padding: '8px 12px', marginBottom: 12,
+              fontSize: 12, color: 'var(--text)', lineHeight: 1.5
+            }}>
+              <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Coach: </span>
+              {ex.notes}
+            </div>
+          )}
+
+          {/* Istruzioni ExerciseDB */}
+          {exData?.instructions?.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--dim)', marginBottom: 6, letterSpacing: 1 }}>
+                ESECUZIONE
+              </div>
+              {exData.instructions.slice(0, 3).map((inst, i) => (
+                <div key={i} style={{
+                  fontSize: 11, color: 'var(--dim)', lineHeight: 1.5,
+                  paddingLeft: 12, borderLeft: '2px solid var(--border)', marginBottom: 4
+                }}>
+                  {inst}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Tracker serie */}
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--dim)', marginBottom: 8, letterSpacing: 1 }}>
+            TRACKER SERIE
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {sets.map((done, i) => (
+              <button key={i} onClick={() => toggleSet(i)} style={{
+                width: 44, height: 44, borderRadius: 10,
+                background: done ? 'var(--accent)' : 'var(--surface)',
+                border: `1px solid ${done ? 'var(--accent)' : 'var(--border)'}`,
+                color: done ? 'var(--bg)' : 'var(--dim)',
+                fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                fontFamily: "'Barlow Condensed', sans-serif"
+              }}>
+                {done ? '✓' : i + 1}
+              </button>
+            ))}
+          </div>
+
+          {/* Rest timer */}
+          <RestTimer seconds={ex.rest_seconds} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RestTimer({ seconds }) {
+  const [running, setRunning] = useState(false);
+  const [remaining, setRemaining] = useState(seconds);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (running) {
+      ref.current = setInterval(() => {
+        setRemaining(r => {
+          if (r <= 1) { clearInterval(ref.current); setRunning(false); return seconds; }
+          return r - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(ref.current);
+  }, [running]);
+
+  const pct = ((seconds - remaining) / seconds) * 100;
+
+  return (
+    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ position: 'relative', width: 44, height: 44 }}>
+        <svg width="44" height="44" style={{ transform: 'rotate(-90deg)' }}>
+          <circle cx="22" cy="22" r="18" fill="none" stroke="var(--border)" strokeWidth="3" />
+          <circle cx="22" cy="22" r="18" fill="none" stroke="var(--accent)" strokeWidth="3"
+            strokeDasharray={`${2 * Math.PI * 18}`}
+            strokeDashoffset={`${2 * Math.PI * 18 * (1 - pct / 100)}`}
+            strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s linear' }} />
+        </svg>
+        <div style={{
+          position: 'absolute', inset: 0, display: 'flex',
+          alignItems: 'center', justifyContent: 'center',
+          fontSize: 10, fontWeight: 700, color: running ? 'var(--accent)' : 'var(--dim)',
+          fontFamily: "'Barlow Condensed', sans-serif"
+        }}>
+          {remaining}s
+        </div>
+      </div>
+      <button onClick={() => {
+        if (running) { clearInterval(ref.current); setRunning(false); setRemaining(seconds); }
+        else setRunning(true);
+      }} style={{
+        padding: '8px 16px', borderRadius: 8,
+        background: running ? 'rgba(200,241,53,0.1)' : 'var(--surface)',
+        border: `1px solid ${running ? 'var(--accent)' : 'var(--border)'}`,
+        color: running ? 'var(--accent)' : 'var(--dim)',
+        fontSize: 12, fontWeight: 600, cursor: 'pointer'
+      }}>
+        {running ? '⏹ Stop' : '▶ Rest Timer'}
       </button>
     </div>
   );
 }
 
-// ─── IMAGE SLIDESHOW ─────────────────────────────────────────────────────────
-function ImgSlide({ images, name }) {
-  const [idx, setIdx] = useState(0);
-  const [err, setErr] = useState(false);
-  const [ok, setOk] = useState(false);
-  useEffect(() => {
-    if (!images || images.length <= 1) return;
-    const t = setInterval(() => setIdx(i => (i + 1) % images.length), 1200);
-    return () => clearInterval(t);
-  }, [images]);
-  if (!images?.length || err) return (
-    <div style={{ height:150, background:"#0e0e18", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, marginBottom:10 }}>🏋️</div>
-  );
-  return (
-    <div style={{ position:"relative", borderRadius:12, overflow:"hidden", background:"#f0efe8", marginBottom:10, minHeight:ok?"auto":150 }}>
-      {!ok && <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}><span style={{ fontSize:11, color:"#999" }}>Caricamento...</span></div>}
-      <img src={images[idx]} alt={name} style={{ width:"100%", maxHeight:230, objectFit:"contain", display:"block", margin:"0 auto", opacity:ok?1:0, transition:"opacity 0.3s" }} onLoad={() => setOk(true)} onError={() => setErr(true)} />
-      {images.length > 1 && ok && (
-        <div style={{ position:"absolute", bottom:6, left:"50%", transform:"translateX(-50%)", display:"flex", gap:5 }}>
-          {images.map((_,i) => <div key={i} style={{ width:7, height:7, borderRadius:"50%", background:i===idx?C.accent:"rgba(0,0,0,0.2)" }} />)}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── EXERCISE CARD ────────────────────────────────────────────────────────────
-function ExCard({ ex, data, idx, onTimer }) {
-  const [open, setOpen] = useState(false);
-  const [done, setDone] = useState(0);
-  const isTimeBased = !!ex.duration || data?.isTime;
-  const all = done >= ex.sets;
-
-  const handleSeriesDone = () => {
-    if (all) return;
-    const nd = done + 1;
-    setDone(nd);
-    if (nd < ex.sets) {
-      onTimer({ sec: ex.rest || 90, mode: "rest", label: `${ex.name} · riposo` });
-    }
-  };
-
-  const handleWorkStart = () => {
-    const sec = ex.duration || 30;
-    onTimer({
-      sec,
-      mode: "work",
-      label: ex.name,
-      onDone: () => {
-        const nd = done + 1;
-        setDone(nd);
-        if (nd < ex.sets) {
-          onTimer({ sec: ex.rest || 60, mode: "rest", label: `${ex.name} · riposo` });
-        }
-      }
-    });
-  };
-
-  const formatLabel = () => {
-    if (ex.duration) {
-      const m = Math.floor(ex.duration / 60), s = ex.duration % 60;
-      return `${ex.sets}x${m>0?m+"min":""}${s>0?s+"s":""}`;
-    }
-    return `${ex.sets}x${ex.reps}`;
-  };
-
-  const bpEmoji = { chest:"💪", back:"🔙", shoulders:"🏔️", legs:"🦵", arms:"💪", core:"🎯", "full body":"⚡", cardio:"🏃", mobility:"🧘" };
+function WorkoutView({ plan, rapidApiKey, onBack }) {
+  const [day, setDay] = useState(0);
 
   return (
-    <div className="fade-in" style={{ background:all?"rgba(0,230,138,0.05)":C.card, border:`1px solid ${all?C.accent+"30":C.border}`, borderRadius:14, overflow:"hidden" }}>
-      <div onClick={() => setOpen(!open)} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", cursor:"pointer" }}>
-        <div style={{ width:32, height:32, borderRadius:8, flexShrink:0, background:all?C.accent:C.surface, color:all?C.bg:C.textDim, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700 }}>
-          {all?"✓":idx+1}
-        </div>
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ color:C.text, fontSize:14, fontWeight:600 }}>{ex.name}</div>
-          <div style={{ color:C.textDim, fontSize:12, marginTop:1 }}>
-            {formatLabel()} {ex.weight||""} · riposo {ex.rest||90}s
-            {isTimeBased && <span style={{ color:C.info, marginLeft:5 }}>⏱</span>}
-          </div>
-        </div>
-        <span style={{ color:C.textDim, transition:"transform 0.2s", transform:open?"rotate(180deg)":"" }}>▾</span>
+    <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      {/* Day tabs */}
+      <div style={{
+        padding: '10px 16px', borderBottom: '1px solid var(--border)',
+        overflowX: 'auto', display: 'flex', gap: 6
+      }}>
+        {plan.days.map((d, i) => (
+          <button key={i} onClick={() => setDay(i)} style={{
+            flexShrink: 0, padding: '6px 12px', borderRadius: 8,
+            background: day === i ? 'var(--accent)' : 'var(--surface)',
+            border: `1px solid ${day === i ? 'var(--accent)' : 'var(--border)'}`,
+            color: day === i ? 'var(--bg)' : 'var(--dim)',
+            fontSize: 11, fontWeight: 700, cursor: 'pointer',
+            fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5
+          }}>
+            G{i + 1}
+          </button>
+        ))}
       </div>
-      {open && (
-        <div style={{ padding:"0 14px 14px" }}>
-          <ImgSlide images={data?.img} name={ex.name} />
-          {data?.ins && (
-            <div style={{ marginBottom:10 }}>
-              {data.ins.map((s,i) => (
-                <div key={i} style={{ display:"flex", gap:7, marginBottom:4, fontSize:13, color:C.textDim }}>
-                  <span style={{ color:C.accent, fontWeight:700, flexShrink:0 }}>{i+1}.</span>
-                  <span>{s}</span>
+
+      {/* Day content */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+        {plan.days[day] && (
+          <>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontSize: 22, fontWeight: 800, letterSpacing: 0.5,
+                color: 'var(--text)'
+              }}>
+                {plan.days[day].day}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--accent)', marginTop: 2 }}>
+                {plan.days[day].focus}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {plan.days[day].exercises?.map((ex, i) => (
+                <div key={i} className="fade-up" style={{ animationDelay: `${i * 0.05}s` }}>
+                  <ExerciseCard ex={ex} rapidApiKey={rapidApiKey} />
                 </div>
               ))}
             </div>
-          )}
-          {ex.notes && (
-            <div style={{ fontSize:12, color:C.warning, padding:"7px 11px", background:"rgba(255,167,38,0.08)", borderRadius:8, marginBottom:10 }}>💡 {ex.notes}</div>
-          )}
-          {/* Serie dots */}
-          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:10 }}>
-            {Array.from({length:ex.sets}).map((_,i) => (
-              <div key={i} style={{ width:36, height:36, borderRadius:8, background:i<done?C.accent:C.surface, color:i<done?C.bg:C.textDim, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:600, border:`1px solid ${i<done?C.accent:C.border}` }}>
-                {i<done?"✓":`S${i+1}`}
-              </div>
-            ))}
-          </div>
-          {/* Buttons */}
-          {isTimeBased ? (
-            <div style={{ display:"flex", gap:8 }}>
-              <button onClick={handleWorkStart} disabled={all} style={{ flex:2, padding:"11px", borderRadius:10, background:all?C.surface:C.info, color:all?C.textDim:C.bg, border:"none", fontWeight:700, fontSize:13, cursor:all?"default":"pointer" }}>
-                {all?"Completato ✓":`▶ Avvia ${done+1}a serie`}
-              </button>
-              {!all && (
-                <button onClick={handleSeriesDone} style={{ flex:1, padding:"11px", borderRadius:10, background:"transparent", color:C.textDim, border:`1px solid ${C.border}`, fontWeight:600, fontSize:12, cursor:"pointer" }}>
-                  Manuale ✓
-                </button>
-              )}
-            </div>
-          ) : (
-            <button onClick={handleSeriesDone} disabled={all} style={{ width:"100%", padding:"11px", borderRadius:10, background:all?C.surface:C.accent, color:all?C.textDim:C.bg, border:"none", fontWeight:700, fontSize:14, cursor:all?"default":"pointer" }}>
-              {all?"Completato ✓":`Serie ${done+1} completata →`}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── CHAT BUBBLE ─────────────────────────────────────────────────────────────
-function Bubble({ msg }) {
-  const u = msg.role === "user";
-  return (
-    <div className="fade-in" style={{ display:"flex", justifyContent:u?"flex-end":"flex-start", marginBottom:10 }}>
-      <div style={{ maxWidth:"88%", padding:"11px 15px", background:u?C.chatU:C.chatA, borderRadius:u?"16px 16px 4px 16px":"16px 16px 16px 4px", border:`1px solid ${u?"#253050":"#1a2f1e"}`, color:C.text, fontSize:14, lineHeight:1.55, whiteSpace:"pre-wrap" }}>
-        {!u && <div style={{ fontSize:10, color:C.accent, fontWeight:700, marginBottom:3, letterSpacing:1.5 }}>COACH AI</div>}
-        {msg.content}
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-// ─── SAVED WORKOUTS VIEW ──────────────────────────────────────────────────────
-function SavedView({ onLoad, onBack }) {
-  const [list, setList] = useState(getSavedWorkouts());
-  const [importing, setImporting] = useState(false);
-  const [importText, setImportText] = useState("");
-  const [importErr, setImportErr] = useState("");
-  const [copied, setCopied] = useState(null);
-
-  const handleDelete = (id) => {
-    if (window.confirm("Eliminare questa scheda?")) {
-      setList(deleteWorkout(id));
-    }
-  };
-
-  const handleExport = (w) => {
-    const text = exportPlanText(w.plan);
-    navigator.clipboard?.writeText(text).then(() => {
-      setCopied(w.id);
-      setTimeout(() => setCopied(null), 2000);
-    });
-  };
-
-  const handleImport = () => {
-    const p = importPlanFromText(importText);
-    if (p) {
-      const newList = saveWorkout(p);
-      setList(newList);
-      setImportText(""); setImporting(false); setImportErr("");
-    } else {
-      setImportErr("Formato non riconosciuto. Incolla il JSON completo della scheda.");
-    }
-  };
+function ChatView({ msgs, busy, inp, setInp, onSend }) {
+  const endRef = useRef(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, busy]);
 
   return (
-    <div style={{ flex:1, overflow:"auto", padding:"12px 12px 40px" }}>
-      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
-        <button onClick={onBack} style={{ background:"transparent", border:"none", color:C.textDim, cursor:"pointer", fontSize:20, padding:"4px 8px" }}>←</button>
-        <div style={{ fontSize:17, fontWeight:700 }}>Le mie schede</div>
-        <button onClick={() => setImporting(!importing)} style={{ marginLeft:"auto", padding:"7px 13px", background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, color:C.textDim, fontSize:12, cursor:"pointer", fontWeight:600 }}>
-          {importing ? "Annulla" : "📥 Importa"}
+    <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+        {msgs.map((m, i) => (
+          <div key={i} style={{
+            marginBottom: 12, display: 'flex',
+            justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start'
+          }}>
+            <div style={{
+              maxWidth: '85%', padding: '10px 14px', borderRadius: 14,
+              background: m.role === 'user' ? 'var(--accent)' : 'var(--card)',
+              color: m.role === 'user' ? 'var(--bg)' : 'var(--text)',
+              border: m.role === 'user' ? 'none' : '1px solid var(--border)',
+              fontSize: 13, lineHeight: 1.6,
+              borderBottomRightRadius: m.role === 'user' ? 4 : 14,
+              borderBottomLeftRadius: m.role === 'assistant' ? 4 : 14,
+              whiteSpace: 'pre-wrap'
+            }}>
+              {m.content}
+            </div>
+          </div>
+        ))}
+        {busy && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 0' }}>
+            <Spinner size={16} />
+            <span style={{ fontSize: 12, color: 'var(--dim)' }}>Iron Coach sta pensando...</span>
+          </div>
+        )}
+        <div ref={endRef} />
+      </div>
+
+      <div style={{
+        padding: '12px 16px', borderTop: '1px solid var(--border)',
+        background: 'var(--surface)', display: 'flex', gap: 8
+      }}>
+        <textarea
+          value={inp}
+          onChange={e => setInp(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+          placeholder="Scrivi al tuo coach..."
+          rows={1}
+          style={{
+            flex: 1, background: 'var(--card)', border: '1px solid var(--border)',
+            borderRadius: 12, padding: '10px 14px', color: 'var(--text)',
+            fontSize: 14, fontFamily: 'DM Sans, sans-serif', resize: 'none',
+            lineHeight: 1.5
+          }}
+        />
+        <button onClick={onSend} disabled={busy || !inp.trim()} style={{
+          width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+          background: inp.trim() && !busy ? 'var(--accent)' : 'var(--border)',
+          border: 'none', cursor: inp.trim() && !busy ? 'pointer' : 'default',
+          color: inp.trim() && !busy ? 'var(--bg)' : 'var(--dim)',
+          fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'all 0.15s ease'
+        }}>
+          {busy ? <Spinner size={16} color="var(--dim)" /> : '↑'}
         </button>
       </div>
-
-      {importing && (
-        <div style={{ background:C.card, borderRadius:12, padding:14, marginBottom:14, border:`1px solid ${C.border}` }}>
-          <div style={{ fontSize:13, color:C.textDim, marginBottom:8 }}>Incolla il JSON della scheda (ricevuta da un amico):</div>
-          <textarea value={importText} onChange={e => setImportText(e.target.value)}
-            placeholder='{"workout_plan":{"name":...}}'
-            rows={4} style={{ width:"100%", background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, color:C.text, padding:"10px", fontSize:12, resize:"none", fontFamily:"monospace", marginBottom:8 }} />
-          {importErr && <div style={{ fontSize:12, color:"#ef5350", marginBottom:8 }}>{importErr}</div>}
-          <button onClick={handleImport} disabled={!importText.trim()} style={{ width:"100%", padding:"10px", borderRadius:9, background:importText.trim()?C.accent:C.surface, color:importText.trim()?C.bg:C.textDim, border:"none", fontWeight:700, cursor:importText.trim()?"pointer":"default" }}>
-            Importa scheda
-          </button>
-        </div>
-      )}
-
-      {list.length === 0 ? (
-        <div style={{ textAlign:"center", padding:"50px 20px", color:C.textDim }}>
-          <div style={{ fontSize:40, marginBottom:12 }}>📋</div>
-          <div style={{ fontSize:15, fontWeight:600, marginBottom:6 }}>Nessuna scheda salvata</div>
-          <div style={{ fontSize:13 }}>Crea una scheda in chat e verrà salvata automaticamente</div>
-        </div>
-      ) : (
-        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-          {list.map(w => (
-            <div key={w.id} style={{ background:C.card, borderRadius:12, padding:"13px 14px", border:`1px solid ${C.border}` }}>
-              <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:8 }}>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:14, fontWeight:700, color:C.text }}>{w.name}</div>
-                  <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{w.date} · {w.plan.weeks} sett. · {w.plan.days?.length} giorni</div>
-                </div>
-                <div style={{ display:"flex", gap:6 }}>
-                  <button onClick={() => handleExport(w)} style={{ padding:"5px 9px", background:C.surface, border:`1px solid ${C.border}`, borderRadius:7, color:copied===w.id?C.accent:C.textDim, cursor:"pointer", fontSize:13 }}>
-                    {copied===w.id?"✓":"📤"}
-                  </button>
-                  <button onClick={() => handleDelete(w.id)} style={{ padding:"5px 9px", background:C.surface, border:`1px solid ${C.border}`, borderRadius:7, color:"#ef5350", cursor:"pointer", fontSize:13 }}>🗑</button>
-                </div>
-              </div>
-              <button onClick={() => onLoad(w.plan)} style={{ marginTop:10, width:"100%", padding:"9px", borderRadius:9, background:C.accent, color:C.bg, border:"none", fontWeight:700, fontSize:13, cursor:"pointer" }}>
-                Carica scheda →
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
 
-// ─── SYSTEM PROMPT ────────────────────────────────────────────────────────────
-const SYS = `Sei un personal trainer AI esperto. Utente: Ale, 30+ anni, attivo (beach volley, basket, HIIT, mobilità).
-RISPONDI IN ITALIANO. Diretto e pratico.
+// ─── SETUP SCREEN ─────────────────────────────────────────────────────────────
+function SetupScreen({ onComplete }) {
+  const [anthropicKey, setAnthropicKey] = useState('');
+  const [rapidKey, setRapidKey] = useState('');
+  const [step, setStep] = useState(1);
 
-Quando proponi scheda, usa JSON in \`\`\`json\`\`\`:
-\`\`\`json
-{"workout_plan":{"name":"Nome","weeks":4,"days":[{"day":"Giorno 1 - Push","focus":"Petto, Spalle, Tricipiti","exercises":[
-  {"id":"ex01","name":"Barbell Bench Press","sets":4,"reps":"8-10","rest":120,"weight":"70-80%","notes":"Controlla la discesa"},
-  {"id":"cardio_run","name":"Corsa","sets":1,"duration":1800,"rest":0,"notes":"Defaticamento 30min"},
-  {"id":"ex33","name":"Plank","sets":3,"duration":60,"rest":30}
-]}]}}
-\`\`\`
+  const proceed = () => {
+    if (step === 1 && anthropicKey.trim()) setStep(2);
+    else if (step === 2 && rapidKey.trim()) onComplete(anthropicKey.trim(), rapidKey.trim());
+  };
 
-CAMPO duration: usa per esercizi a tempo, in SECONDI (es. plank 60s, corsa 1800s=30min, HIIT 40s).
-CAMPO reps: usa per esercizi a ripetizioni.
-NON usare entrambi per lo stesso esercizio.
+  return (
+    <div style={{
+      minHeight: '100vh', background: 'var(--bg)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
+    }}>
+      <div style={{ maxWidth: 380, width: '100%' }}>
+        {/* Logo */}
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div style={{
+            fontFamily: "'Barlow Condensed', sans-serif",
+            fontSize: 42, fontWeight: 900, letterSpacing: 2,
+            color: 'var(--text)'
+          }}>
+            <span style={{ color: 'var(--accent)' }}>IRON</span> COACH
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--dim)', letterSpacing: 3, marginTop: 2 }}>
+            AI WORKOUT PLANNER · 11K EXERCISES
+          </div>
+        </div>
 
-ESERCIZI DISPONIBILI (usa SOLO questi id):
-${EXERCISES.map(e => `${e.id}:${e.name}[${e.bp}](${e.eq})`).join(", ")}
+        <div style={{
+          background: 'var(--card)', borderRadius: 18, padding: 24,
+          border: '1px solid var(--border)'
+        }}>
+          {/* Step indicator */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 24 }}>
+            {[1, 2].map(s => (
+              <div key={s} style={{
+                flex: 1, height: 3, borderRadius: 2,
+                background: s <= step ? 'var(--accent)' : 'var(--border)',
+                transition: 'background 0.3s'
+              }} />
+            ))}
+          </div>
 
-Riposo: forza 120-180s, ipertrofia 60-90s, HIIT 20-45s, mobilità 15-30s, cardio 0-60s.
-Riscaldamento nelle note del primo esercizio o come esercizio cardio iniziale.
-Mobilità: id "mob_*". HIIT: body weight con duration. Cardio: id "cardio_*" con duration.
-Genera SEMPRE il JSON quando proponi la scheda.`;
+          {step === 1 ? (
+            <>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+                🤖 Anthropic API Key
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 16, lineHeight: 1.5 }}>
+                Per la chat AI. Prendila da <span style={{ color: 'var(--accent)' }}>console.anthropic.com</span> → API Keys
+              </div>
+              <input
+                type="password"
+                value={anthropicKey}
+                onChange={e => setAnthropicKey(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && proceed()}
+                placeholder="sk-ant-..."
+                style={{
+                  width: '100%', padding: '12px 14px',
+                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 10, color: 'var(--text)', fontSize: 14,
+                  fontFamily: 'DM Sans, sans-serif', marginBottom: 12
+                }}
+              />
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+                🏋️ RapidAPI Key (ExerciseDB)
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 16, lineHeight: 1.5 }}>
+                Per le GIF degli esercizi. Da <span style={{ color: 'var(--accent)' }}>rapidapi.com</span> → ExerciseDB → Subscribe → Dashboard
+              </div>
+              <input
+                type="password"
+                value={rapidKey}
+                onChange={e => setRapidKey(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && proceed()}
+                placeholder="x-rapidapi-key..."
+                style={{
+                  width: '100%', padding: '12px 14px',
+                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 10, color: 'var(--text)', fontSize: 14,
+                  fontFamily: 'DM Sans, sans-serif', marginBottom: 12
+                }}
+              />
+            </>
+          )}
+
+          <button
+            onClick={proceed}
+            disabled={step === 1 ? !anthropicKey.trim() : !rapidKey.trim()}
+            style={{
+              width: '100%', padding: 14, borderRadius: 10, border: 'none',
+              background: (step === 1 ? anthropicKey.trim() : rapidKey.trim()) ? 'var(--accent)' : 'var(--border)',
+              color: (step === 1 ? anthropicKey.trim() : rapidKey.trim()) ? 'var(--bg)' : 'var(--dim)',
+              fontWeight: 700, fontSize: 15, cursor: 'pointer',
+              fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 1
+            }}
+          >
+            {step === 1 ? 'AVANTI →' : 'INIZIA L\'ALLENAMENTO →'}
+          </button>
+        </div>
+
+        <div style={{ textAlign: 'center', marginTop: 16, fontSize: 11, color: 'var(--dim)' }}>
+          Le key restano solo in memoria · Non vengono salvate
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 function App() {
-  const [apiKey, setApiKey] = useState(getKey());
-  const [keySet, setKeySet] = useState(!!getKey());
-  const [view, setView] = useState("chat"); // chat | workout | saved
-  const [msgs, setMsgs] = useState([{ role:"assistant", content:"Ciao Ale! 💪\n\nSono il tuo Coach AI. Dimmi:\n\n→ Obiettivo? (massa, forza, definizione, mobilità, cardio, mix)\n→ Giorni a settimana?\n→ Attrezzatura? (palestra, casa, misto)\n→ Problemi o zone da evitare?\n\nCostruiamo la tua scheda." }]);
-  const [inp, setInp] = useState("");
+  const [anthropicKey, setAnthropicKey] = useState('');
+  const [rapidKey, setRapidKey] = useState('');
+  const [ready, setReady] = useState(false);
+  const [view, setView] = useState('chat');
+  const [msgs, setMsgs] = useState([{
+    role: 'assistant',
+    content: 'Ciao! Sono il tuo Iron Coach 💪\n\nHo accesso a 11.000+ esercizi con GIF animate, da forza a mobilità a pliometria.\n\nDimmi:\n→ Obiettivo?\n→ Giorni/settimana?\n→ Attrezzatura disponibile?\n→ Livello e limitazioni?'
+  }]);
+  const [inp, setInp] = useState('');
   const [busy, setBusy] = useState(false);
   const [plan, setPlan] = useState(null);
-  const [day, setDay] = useState(0);
-  const [activeTimer, setActiveTimer] = useState(null); // { sec, mode, label, onDone? }
-  const endRef = useRef(null);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior:"smooth" }); }, [msgs, busy]);
+  const handleSetup = (ak, rk) => {
+    setAnthropicKey(ak);
+    setRapidKey(rk);
+    setReady(true);
+  };
 
-  const parse = (t) => {
-    const m = t.match(/```json\s*([\s\S]*?)\s*```/);
-    if (m) { try { return JSON.parse(m[1]).workout_plan || null; } catch(e){} }
+  const parsePlan = (txt) => {
+    const m = txt.match(/```json\s*([\s\S]*?)\s*```/);
+    if (m) { try { return JSON.parse(m[1]).workout_plan || null; } catch(e) {} }
     return null;
   };
 
   const send = async () => {
     if (!inp.trim() || busy) return;
-    const um = { role:"user", content:inp.trim() };
+    const um = { role: 'user', content: inp.trim() };
     const nm = [...msgs, um];
-    setMsgs(nm); setInp(""); setBusy(true);
+    setMsgs(nm); setInp(''); setBusy(true);
     try {
-      const r = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type":"application/json", "x-api-key": apiKey, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
-        body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:4000, system:SYS, messages:nm.map(m => ({role:m.role, content:m.content})) })
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          system: SYSTEM,
+          messages: nm.map(m => ({ role: m.role, content: m.content }))
+        })
       });
-      const d = await r.json();
-      if (d.error) { setMsgs([...nm, {role:"assistant", content:`Errore API: ${d.error.message}\n\nControlla la tua API key.`}]); setBusy(false); return; }
-      const txt = d.content?.map(c => c.text||"").join("") || "Errore!";
-      const p = parse(txt);
-      if (p) { setPlan(p); saveWorkout(p); }
-      const show = txt.replace(/```json[\s\S]*?```/g, p ? "\n\n✅ Scheda generata e salvata! Tocca 'Scheda' per iniziare." : "").trim();
-      setMsgs([...nm, {role:"assistant", content:show}]);
-    } catch(e) { setMsgs([...nm, {role:"assistant", content:"Errore connessione. Riprova!"}]); }
+      const data = await res.json();
+      if (data.error) {
+        setMsgs([...nm, { role: 'assistant', content: `❌ Errore API: ${data.error.message}` }]);
+        setBusy(false); return;
+      }
+      const txt = data.content?.map(c => c.text || '').join('') || '';
+      const p = parsePlan(txt);
+      if (p) {
+        setPlan(p);
+        const show = txt.replace(/```json[\s\S]*?```/, '').trim();
+        setMsgs([...nm, { role: 'assistant', content: show + '\n\n✅ Scheda generata! Tocca "SCHEDA" per iniziare.' }]);
+        setView('workout');
+      } else {
+        setMsgs([...nm, { role: 'assistant', content: txt }]);
+      }
+    } catch(e) {
+      setMsgs([...nm, { role: 'assistant', content: '❌ Errore di connessione. Riprova.' }]);
+    }
     setBusy(false);
   };
 
-  const findEx = (id) => EXERCISES.find(e => e.id === id);
+  if (!ready) return <SetupScreen onComplete={handleSetup} />;
 
-  const handleTimer = (config) => {
-    if (config.onDone) {
-      setActiveTimer({ ...config, _onDone: config.onDone });
-    } else {
-      setActiveTimer(config);
-    }
-  };
-
-  const handleTimerDone = () => {
-    const cb = activeTimer?._onDone;
-    setActiveTimer(null);
-    if (cb) cb();
-  };
-
-  // ─── KEY SETUP ──────────────────────────────────────────────────────────────
-  if (!keySet) return (
-    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
-      <div style={{ maxWidth:400, width:"100%", textAlign:"center" }}>
-        <div style={{ fontSize:28, fontWeight:700, color:C.text, marginBottom:6 }}><span style={{ color:C.accent }}>●</span> IRON COACH</div>
-        <div style={{ fontSize:11, color:C.textDim, letterSpacing:3, marginBottom:30 }}>AI WORKOUT PLANNER v2</div>
-        <div style={{ background:C.card, borderRadius:16, padding:24, border:`1px solid ${C.border}`, textAlign:"left" }}>
-          <div style={{ fontSize:14, fontWeight:600, color:C.text, marginBottom:12 }}>🔑 Anthropic API Key</div>
-          <div style={{ fontSize:12, color:C.textDim, lineHeight:1.5, marginBottom:16 }}>
-            Serve per la chat AI. Prendila da console.anthropic.com → API Keys. Costa pochi centesimi/mese. Viene salvata solo nel tuo browser.
-          </div>
-          <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} onKeyDown={e => { if(e.key==="Enter"&&apiKey.trim()){ setKey(apiKey.trim()); setKeySet(true); }}} placeholder="sk-ant-..."
-            style={{ width:"100%", padding:"12px 14px", background:C.surface, border:`1px solid ${C.border}`, borderRadius:10, color:C.text, fontSize:14, fontFamily:"inherit", marginBottom:12 }} />
-          <button onClick={() => { if(apiKey.trim()){ setKey(apiKey.trim()); setKeySet(true); }}} disabled={!apiKey.trim()}
-            style={{ width:"100%", padding:"13px", borderRadius:10, background:apiKey.trim()?C.accent:C.surface, color:apiKey.trim()?C.bg:C.textDim, border:"none", fontWeight:700, fontSize:15, cursor:apiKey.trim()?"pointer":"default" }}>
-            Inizia 🏋️
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  // ─── MAIN VIEW ──────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight:"100vh", background:C.bg, color:C.text, maxWidth:480, margin:"0 auto", display:"flex", flexDirection:"column" }}>
-
-      {/* ACTIVE TIMER OVERLAY */}
-      {activeTimer && (
-        <Timer
-          sec={activeTimer.sec}
-          mode={activeTimer.mode}
-          label={activeTimer.label}
-          onDone={handleTimerDone}
-          onSkip={() => setActiveTimer(null)}
-        />
-      )}
-
-      {/* HEADER */}
-      <div style={{ padding:"12px 16px", borderBottom:`1px solid ${C.border}`, background:C.surface, position:"sticky", top:0, zIndex:100 }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+    <div style={{
+      minHeight: '100vh', background: 'var(--bg)',
+      maxWidth: 480, margin: '0 auto',
+      display: 'flex', flexDirection: 'column'
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: '12px 16px', borderBottom: '1px solid var(--border)',
+        background: 'var(--surface)', position: 'sticky', top: 0, zIndex: 100
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <div>
-            <div style={{ fontSize:17, fontWeight:700 }}><span style={{ color:C.accent }}>●</span> IRON COACH</div>
-            <div style={{ fontSize:10, color:C.textDim, letterSpacing:2 }}>AI WORKOUT PLANNER</div>
+            <div style={{
+              fontFamily: "'Barlow Condensed', sans-serif",
+              fontSize: 22, fontWeight: 900, letterSpacing: 1
+            }}>
+              <span style={{ color: 'var(--accent)' }}>IRON</span> COACH
+            </div>
+            <div style={{ fontSize: 9, color: 'var(--dim)', letterSpacing: 2 }}>11K EXERCISES · AI POWERED</div>
           </div>
-          <button onClick={() => setView("saved")} style={{ padding:"5px 10px", background:C.card, border:`1px solid ${C.border}`, borderRadius:9, color:C.textDim, fontSize:11, cursor:"pointer", fontWeight:600 }}>
-            📋 Salvate
-          </button>
+          {plan && (
+            <div style={{
+              fontSize: 10, color: 'var(--accent)', background: 'var(--glow)',
+              padding: '4px 10px', borderRadius: 20, fontWeight: 700,
+              border: '1px solid rgba(200,241,53,0.2)',
+              fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 1
+            }}>
+              {plan.title}
+            </div>
+          )}
         </div>
-        <div style={{ display:"flex", gap:4 }}>
-          {["chat","workout"].map(t => (
-            <button key={t} onClick={() => setView(t)} style={{ flex:1, padding:"8px 0", borderRadius:10, background:view===t?C.accent:"transparent", color:view===t?C.bg:C.textDim, border:view===t?"none":`1px solid ${C.border}`, fontWeight:700, fontSize:13, cursor:"pointer", opacity:t==="workout"&&!plan?0.35:1 }}>
-              {t==="chat"?"💬 Chat":"🏋️ Scheda"}
+
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: 4 }}>
+          {['chat', 'workout'].map(t => (
+            <button key={t} onClick={() => setView(t)}
+              disabled={t === 'workout' && !plan}
+              style={{
+                flex: 1, padding: '8px 0', borderRadius: 10,
+                background: view === t ? 'var(--accent)' : 'transparent',
+                color: view === t ? 'var(--bg)' : t === 'workout' && !plan ? 'var(--border)' : 'var(--dim)',
+                border: view === t ? 'none' : `1px solid ${t === 'workout' && !plan ? 'var(--border)' : 'var(--border)'}`,
+                fontWeight: 700, fontSize: 12, cursor: t === 'workout' && !plan ? 'default' : 'pointer',
+                fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 1
+              }}>
+              {t === 'chat' ? '💬 CHAT' : '🏋️ SCHEDA'}
             </button>
           ))}
         </div>
       </div>
 
-      {/* SAVED */}
-      {view==="saved" && (
-        <SavedView
-          onLoad={(p) => { setPlan(p); setDay(0); setView("workout"); }}
-          onBack={() => setView("chat")}
-        />
-      )}
-
-      {/* CHAT */}
-      {view==="chat" && (
-        <div style={{ flex:1, display:"flex", flexDirection:"column" }}>
-          <div style={{ flex:1, overflow:"auto", padding:"12px 12px 110px" }}>
-            {msgs.map((m,i) => <Bubble key={i} msg={m} />)}
-            {busy && (
-              <div style={{ display:"flex", gap:6, padding:"10px 16px" }}>
-                {[0,1,2].map(i => <div key={i} style={{ width:8, height:8, borderRadius:"50%", background:C.accent, animation:`dot 1s ${i*0.2}s infinite` }} />)}
-              </div>
-            )}
-            <div ref={endRef} />
-          </div>
-          <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, padding:"8px 12px 16px", background:`linear-gradient(transparent, ${C.bg} 25%)` }}>
-            <div style={{ display:"flex", gap:8, background:C.surface, borderRadius:14, border:`1px solid ${C.border}`, padding:5 }}>
-              <textarea value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => { if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); send(); }}} placeholder="Scrivi al coach..." rows={1}
-                style={{ flex:1, background:"transparent", border:"none", color:C.text, fontSize:14, padding:"10px 12px", resize:"none", lineHeight:1.4, fontFamily:"inherit" }} />
-              <button onClick={send} disabled={!inp.trim()||busy}
-                style={{ width:44, height:44, borderRadius:10, flexShrink:0, background:inp.trim()?C.accent:C.card, color:inp.trim()?C.bg:C.textDim, border:"none", fontSize:18, cursor:inp.trim()?"pointer":"default", display:"flex", alignItems:"center", justifyContent:"center" }}>↑</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* WORKOUT */}
-      {view==="workout" && (
-        <div style={{ flex:1, overflow:"auto", padding:"12px 12px 40px" }}>
-          {!plan ? (
-            <div style={{ textAlign:"center", padding:"60px 20px", color:C.textDim }}>
-              <div style={{ fontSize:48, marginBottom:14 }}>🏋️</div>
-              <div style={{ fontSize:16, fontWeight:600, marginBottom:6 }}>Nessuna scheda</div>
-              <div style={{ fontSize:13, marginBottom:6 }}>Chatta col Coach per crearla</div>
-              <div style={{ fontSize:12, color:C.textDim }}>oppure carica una scheda salvata</div>
-              <div style={{ display:"flex", gap:8, justifyContent:"center", marginTop:18 }}>
-                <button onClick={() => setView("chat")} style={{ padding:"11px 20px", background:C.accent, color:C.bg, border:"none", borderRadius:10, fontWeight:700, cursor:"pointer", fontSize:13 }}>Vai alla Chat</button>
-                <button onClick={() => setView("saved")} style={{ padding:"11px 20px", background:C.surface, color:C.textDim, border:`1px solid ${C.border}`, borderRadius:10, fontWeight:700, cursor:"pointer", fontSize:13 }}>Le mie schede</button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div style={{ marginBottom:14 }}>
-                <div style={{ fontSize:19, fontWeight:700 }}>{plan.name}</div>
-                <div style={{ fontSize:12, color:C.textDim, marginTop:2 }}>{plan.weeks} sett. · {plan.days?.length} giorni</div>
-              </div>
-              <div style={{ display:"flex", gap:5, overflowX:"auto", marginBottom:14, paddingBottom:4 }}>
-                {plan.days?.map((d,i) => (
-                  <button key={i} onClick={() => setDay(i)} style={{ padding:"7px 13px", borderRadius:9, whiteSpace:"nowrap", flexShrink:0, background:day===i?C.accent:C.card, color:day===i?C.bg:C.textDim, border:day===i?"none":`1px solid ${C.border}`, fontWeight:600, fontSize:12, cursor:"pointer" }}>
-                    {d.day?.replace(/Giorno \d+ - /,"")||`G${i+1}`}
-                  </button>
-                ))}
-              </div>
-              {plan.days?.[day] && (
-                <>
-                  <div style={{ padding:"9px 13px", background:C.accentGlow, borderRadius:10, marginBottom:12, border:`1px solid ${C.accent}20` }}>
-                    <div style={{ fontSize:15, fontWeight:700 }}>{plan.days[day].day}</div>
-                    <div style={{ fontSize:12, color:C.textDim, marginTop:2 }}>{plan.days[day].focus}</div>
-                  </div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
-                    {plan.days[day].exercises?.map((ex,i) => (
-                      <ExCard key={ex.id+i} ex={ex} data={findEx(ex.id)} idx={i} onTimer={handleTimer} />
-                    ))}
-                  </div>
-                </>
-              )}
-              <button onClick={() => setView("chat")} style={{ width:"100%", marginTop:18, padding:"12px", background:C.surface, border:`1px solid ${C.border}`, borderRadius:12, color:C.textDim, fontWeight:600, fontSize:13, cursor:"pointer" }}>💬 Modifica in chat</button>
-            </>
-          )}
-        </div>
-      )}
+      {/* Content */}
+      {view === 'chat'
+        ? <ChatView msgs={msgs} busy={busy} inp={inp} setInp={setInp} onSend={send} />
+        : plan && <WorkoutView plan={plan} rapidApiKey={rapidKey} onBack={() => setView('chat')} />
+      }
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById("app")).render(<App />);
+ReactDOM.createRoot(document.getElementById('app')).render(<App />);
 </script>
 </body>
 </html>
