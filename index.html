@@ -29,7 +29,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 
 <script type="text/babel">
-const { useState, useEffect, useRef, useCallback } = React;
+const { useState, useEffect, useRef } = React;
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const C = {
@@ -334,24 +334,23 @@ function App() {
     return null;
   };
 
-  const SYS = exercises.length ? `Sei un personal trainer AI esperto. Utente: Ale, 30+ anni, attivo (beach volley, basket, HIIT, mobilità).
-RISPONDI IN ITALIANO. Diretto e pratico.
-
-Quando proponi scheda, JSON in \`\`\`json\`\`\`:
-\`\`\`json
-{"workout_plan":{"name":"Nome Scheda","weeks":4,"days":[{"day":"Giorno 1 - Push","focus":"Petto, Spalle, Tricipiti","exercises":[{"id":"","name":"Barbell Bench Press","sets":4,"reps":"8-10","rest":120,"weight":"70-80%","notes":"Controlla discesa"},{"id":"","name":"Plank","sets":3,"duration":60,"rest":45,"notes":"Core attivato"}]}]}}
-\`\`\`
-
-REGOLE:
-- Il campo "name" deve corrispondere ESATTAMENTE a un esercizio del database.
-- Per esercizi a TEMPO (plank, hold, cardio) usa "duration" in secondi invece di "reps".
-- Riposo: forza 120-180s, ipertrofia 60-90s, HIIT 20-45s, mobilità 30s.
-- Includi sempre riscaldamento nelle note del primo esercizio.
-- Varia tra spinta/trazione, maiuscole/minuscole non importa.
-
-DATABASE ESERCIZI (~800 disponibili):
-${buildExerciseList(exercises).substring(0, 6000)}
-...e molti altri. Puoi usare qualsiasi esercizio dal database, descrivi con nome preciso.` : "Sistema in caricamento...";
+  const SYS = !exercises.length ? "Sistema in caricamento..." : (
+    "Sei un personal trainer AI esperto. Utente: Ale, 30+ anni, attivo (beach volley, basket, HIIT, mobilit\u00e0).\n" +
+    "RISPONDI IN ITALIANO. Diretto e pratico.\n\n" +
+    "Quando proponi scheda, rispondi con un blocco JSON racchiuso tra ```json e ```:  \n" +
+    '{"workout_plan":{"name":"Nome Scheda","weeks":4,"days":[{"day":"Giorno 1 - Push","focus":"Petto, Spalle, Tricipiti","exercises":[' +
+    '{"id":"","name":"Barbell Bench Press","sets":4,"reps":"8-10","rest":120,"weight":"70-80%","notes":"Controlla discesa"},' +
+    '{"id":"","name":"Plank","sets":3,"duration":60,"rest":45,"notes":"Core attivato"}' +
+    ']}]}}\n\n' +
+    "REGOLE:\n" +
+    "- Il campo name deve corrispondere ESATTAMENTE a un esercizio del database.\n" +
+    "- Per esercizi a TEMPO usa duration in secondi invece di reps.\n" +
+    "- Riposo: forza 120-180s, ipertrofia 60-90s, HIIT 20-45s, mobilit\u00e0 30s.\n" +
+    "- Includi sempre riscaldamento nelle note del primo esercizio.\n\n" +
+    "DATABASE ESERCIZI (~800 disponibili):\n" +
+    buildExerciseList(exercises).substring(0, 6000) +
+    "\n...usa nomi esatti del database."
+  );
 
   const send = async () => {
     if (!inp.trim() || busy) return;
