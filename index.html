@@ -10,47 +10,35 @@
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #080810;
-      --surface: #0f0f1a;
-      --card: #13131f;
-      --border: #1e1e2e;
-      --text: #e8e8f0;
-      --dim: #6b6b8a;
-      --accent: #c8f135;
-      --accent2: #7c3aed;
-      --glow: rgba(200,241,53,0.08);
+      --bg: #080810; --surface: #0f0f1a; --card: #13131f;
+      --border: #1e1e2e; --text: #e8e8f0; --dim: #6b6b8a;
+      --accent: #c8f135; --glow: rgba(200,241,53,0.08);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; -webkit-font-smoothing: antialiased; }
     input:focus, textarea:focus { outline: none; }
     ::-webkit-scrollbar { width: 2px; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-    @keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
-    @keyframes pulse { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .fade-up { animation: fadeUp 0.3s ease forwards; }
+    @keyframes dot { 0%,100%{opacity:.3} 50%{opacity:1} }
+    .fade-up { animation: fadeUp 0.25s ease forwards; }
   </style>
 </head>
 <body>
 <div id="app"></div>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
-
-const ANTHROPIC_KEY_STORAGE = 'ic_anthropic_key';
-const RAPIDAPI_KEY_STORAGE = 'ic_rapidapi_key';
 
 // ─── SYSTEM PROMPT ────────────────────────────────────────────────────────────
 const SYSTEM = `Sei IRON COACH, un AI coach fitness d'élite. Parli italiano, sei diretto e motivante.
 
-Quando l'utente ti chiede una scheda, devi generare un piano strutturato in JSON.
-Raccogli sempre: obiettivo, giorni/settimana, attrezzatura disponibile, livello, eventuali limitazioni fisiche.
+Quando l'utente vuole una scheda, raccogli prima: obiettivo, giorni/settimana, attrezzatura, livello, limitazioni fisiche.
 
-Quando hai abbastanza info, genera la scheda in questo formato JSON esatto (dentro backtick json):
+Quando hai tutto, genera il piano in questo JSON esatto (dentro backtick json):
 
 \`\`\`json
 {
@@ -58,18 +46,18 @@ Quando hai abbastanza info, genera la scheda in questo formato JSON esatto (dent
     "title": "Nome scheda",
     "goal": "obiettivo",
     "days_per_week": 4,
-    "duration_weeks": 8,
     "days": [
       {
         "day": "Giorno 1 - Push",
         "focus": "Petto, Spalle, Tricipiti",
         "exercises": [
           {
-            "search_term": "barbell bench press",
+            "name": "Barbell Bench Press",
+            "search_name": "barbell bench press",
             "sets": 4,
             "reps": "8-10",
             "rest_seconds": 90,
-            "notes": "Presa media, busto fermo"
+            "notes": "Presa media, busto fermo sul panche"
           }
         ]
       }
@@ -78,210 +66,53 @@ Quando hai abbastanza info, genera la scheda in questo formato JSON esatto (dent
 }
 \`\`\`
 
-IMPORTANTE per search_term: usa termini in INGLESE, semplici e precisi, che matchino nomi di esercizi reali.
-Esempi buoni: "squat", "deadlift", "bench press", "pull up", "dumbbell curl", "hip thrust", "plank", "box jump", "hip flexor stretch", "pigeon pose stretch", "lateral raise".
-Per mobilità usa: "stretch", "mobility", "flexibility" nei termini.
-Per pliometria usa: "jump", "plyometric", "box jump", "burpee".
+REGOLE per search_name (fondamentale per trovare le GIF):
+- Usa sempre INGLESE, minuscolo, termini precisi
+- Forza: "barbell squat", "deadlift", "bench press", "pull up", "dumbbell curl", "hip thrust", "overhead press"
+- Mobilità/stretching: "hip flexor stretch", "pigeon pose", "cat cow", "thoracic rotation", "ankle mobility", "shoulder mobility"
+- Pliometria: "box jump", "jump squat", "burpee", "broad jump", "lateral bound", "depth jump"
+- Core: "plank", "dead bug", "pallof press", "ab wheel rollout"
+- Max 6-8 esercizi per giorno. Sii specifico nelle note tecniche.`;
 
-Ogni giorno max 6-8 esercizi. Sii specifico sulle note tecniche.`;
-
-// ─── EXERCISEDB API ───────────────────────────────────────────────────────────
-async function searchExercise(term, rapidApiKey) {
+// ─── EXERCISEDB HELPERS ───────────────────────────────────────────────────────
+async function findExercise(searchName, rapidKey) {
   try {
-    const encoded = encodeURIComponent(term.toLowerCase());
-    const res = await fetch(`https://exercisedb.p.rapidapi.com/exercises/name/${encoded}?limit=3&offset=0`, {
+    const url = `https://exercisedb.p.rapidapi.com/exercises/name/${encodeURIComponent(searchName.toLowerCase())}?limit=5&offset=0`;
+    const res = await fetch(url, {
       headers: {
         'x-rapidapi-host': 'exercisedb.p.rapidapi.com',
-        'x-rapidapi-key': rapidApiKey
+        'x-rapidapi-key': rapidKey
       }
     });
     const data = await res.json();
     if (Array.isArray(data) && data.length > 0) return data[0];
     return null;
-  } catch(e) {
-    return null;
-  }
+  } catch(e) { return null; }
 }
 
-// ─── COMPONENTS ──────────────────────────────────────────────────────────────
-
-function Spinner({ size = 20, color = 'var(--accent)' }) {
-  return (
-    <div style={{
-      width: size, height: size, border: `2px solid transparent`,
-      borderTop: `2px solid ${color}`, borderRadius: '50%',
-      animation: 'spin 0.7s linear infinite', display: 'inline-block'
-    }} />
-  );
+function gifUrl(exerciseId, rapidKey) {
+  return `https://exercisedb.p.rapidapi.com/image?exerciseId=${exerciseId}&resolution=360&rapidapi-key=${rapidKey}`;
 }
 
-function ExerciseCard({ ex, rapidApiKey }) {
-  const [exData, setExData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState(false);
-  const [sets, setSets] = useState(Array(ex.sets).fill(false));
-
-  const load = useCallback(async () => {
-    if (exData || loading) return;
-    setLoading(true);
-    const data = await searchExercise(ex.search_term, rapidApiKey);
-    setExData(data);
-    setLoading(false);
-  }, [ex.search_term, rapidApiKey, exData, loading]);
-
-  useEffect(() => { load(); }, []);
-
-  const toggleSet = (i) => {
-    const ns = [...sets];
-    ns[i] = !ns[i];
-    setSets(ns);
-  };
-
-  const completedSets = sets.filter(Boolean).length;
-  const allDone = completedSets === ex.sets;
-
-  return (
-    <div style={{
-      background: allDone ? 'rgba(200,241,53,0.05)' : 'var(--card)',
-      border: `1px solid ${allDone ? 'rgba(200,241,53,0.3)' : 'var(--border)'}`,
-      borderRadius: 14, overflow: 'hidden',
-      transition: 'all 0.2s ease'
-    }}>
-      {/* Header */}
-      <div onClick={() => setOpen(!open)} style={{
-        padding: '12px 14px', cursor: 'pointer',
-        display: 'flex', alignItems: 'center', gap: 12
-      }}>
-        {/* GIF preview o placeholder */}
-        <div style={{
-          width: 52, height: 52, borderRadius: 10, overflow: 'hidden',
-          background: 'var(--surface)', flexShrink: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }}>
-          {loading ? (
-            <Spinner size={18} />
-          ) : exData?.gifUrl ? (
-            <img src={exData.gifUrl} alt={exData.name}
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              onError={(e) => { e.target.style.display = 'none'; }} />
-          ) : (
-            <span style={{ fontSize: 22 }}>💪</span>
-          )}
-        </div>
-
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontSize: 13, fontWeight: 600, color: allDone ? 'var(--accent)' : 'var(--text)',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-          }}>
-            {exData?.name || ex.search_term}
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
-            {ex.sets} serie × {ex.reps} rep · {ex.rest_seconds}s rest
-          </div>
-          {exData && (
-            <div style={{ fontSize: 10, color: 'var(--accent)', marginTop: 2, opacity: 0.7 }}>
-              {exData.target} · {exData.equipment}
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{
-            fontSize: 11, fontWeight: 700,
-            color: allDone ? 'var(--accent)' : 'var(--dim)'
-          }}>
-            {completedSets}/{ex.sets}
-          </div>
-          <div style={{
-            fontSize: 10, color: 'var(--dim)',
-            transform: open ? 'rotate(180deg)' : 'none',
-            transition: 'transform 0.2s'
-          }}>▼</div>
-        </div>
-      </div>
-
-      {/* Expanded */}
-      {open && (
-        <div style={{ borderTop: `1px solid var(--border)`, padding: '12px 14px' }} className="fade-up">
-          {/* GIF grande */}
-          {exData?.gifUrl && (
-            <div style={{
-              width: '100%', borderRadius: 10, overflow: 'hidden',
-              background: 'var(--surface)', marginBottom: 12,
-              display: 'flex', justifyContent: 'center'
-            }}>
-              <img src={exData.gifUrl} alt={exData.name}
-                style={{ maxHeight: 200, objectFit: 'contain' }} />
-            </div>
-          )}
-
-          {/* Note coach */}
-          {ex.notes && (
-            <div style={{
-              background: 'var(--glow)', border: '1px solid rgba(200,241,53,0.15)',
-              borderRadius: 8, padding: '8px 12px', marginBottom: 12,
-              fontSize: 12, color: 'var(--text)', lineHeight: 1.5
-            }}>
-              <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Coach: </span>
-              {ex.notes}
-            </div>
-          )}
-
-          {/* Istruzioni ExerciseDB */}
-          {exData?.instructions?.length > 0 && (
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--dim)', marginBottom: 6, letterSpacing: 1 }}>
-                ESECUZIONE
-              </div>
-              {exData.instructions.slice(0, 3).map((inst, i) => (
-                <div key={i} style={{
-                  fontSize: 11, color: 'var(--dim)', lineHeight: 1.5,
-                  paddingLeft: 12, borderLeft: '2px solid var(--border)', marginBottom: 4
-                }}>
-                  {inst}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Tracker serie */}
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--dim)', marginBottom: 8, letterSpacing: 1 }}>
-            TRACKER SERIE
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {sets.map((done, i) => (
-              <button key={i} onClick={() => toggleSet(i)} style={{
-                width: 44, height: 44, borderRadius: 10,
-                background: done ? 'var(--accent)' : 'var(--surface)',
-                border: `1px solid ${done ? 'var(--accent)' : 'var(--border)'}`,
-                color: done ? 'var(--bg)' : 'var(--dim)',
-                fontWeight: 700, fontSize: 13, cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                fontFamily: "'Barlow Condensed', sans-serif"
-              }}>
-                {done ? '✓' : i + 1}
-              </button>
-            ))}
-          </div>
-
-          {/* Rest timer */}
-          <RestTimer seconds={ex.rest_seconds} />
-        </div>
-      )}
-    </div>
-  );
+// ─── SPINNER ──────────────────────────────────────────────────────────────────
+function Spinner({ size = 18 }) {
+  return <div style={{
+    width: size, height: size,
+    border: '2px solid var(--border)', borderTop: '2px solid var(--accent)',
+    borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block'
+  }} />;
 }
 
+// ─── REST TIMER ───────────────────────────────────────────────────────────────
 function RestTimer({ seconds }) {
   const [running, setRunning] = useState(false);
-  const [remaining, setRemaining] = useState(seconds);
+  const [rem, setRem] = useState(seconds);
   const ref = useRef(null);
 
   useEffect(() => {
     if (running) {
       ref.current = setInterval(() => {
-        setRemaining(r => {
+        setRem(r => {
           if (r <= 1) { clearInterval(ref.current); setRunning(false); return seconds; }
           return r - 1;
         });
@@ -290,88 +121,211 @@ function RestTimer({ seconds }) {
     return () => clearInterval(ref.current);
   }, [running]);
 
-  const pct = ((seconds - remaining) / seconds) * 100;
+  const pct = ((seconds - rem) / seconds) * 100;
+  const r = 16, circ = 2 * Math.PI * r;
 
   return (
-    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div style={{ position: 'relative', width: 44, height: 44 }}>
-        <svg width="44" height="44" style={{ transform: 'rotate(-90deg)' }}>
-          <circle cx="22" cy="22" r="18" fill="none" stroke="var(--border)" strokeWidth="3" />
-          <circle cx="22" cy="22" r="18" fill="none" stroke="var(--accent)" strokeWidth="3"
-            strokeDasharray={`${2 * Math.PI * 18}`}
-            strokeDashoffset={`${2 * Math.PI * 18 * (1 - pct / 100)}`}
-            strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s linear' }} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+      <div style={{ position: 'relative', width: 40, height: 40, flexShrink: 0 }}>
+        <svg width="40" height="40" style={{ transform: 'rotate(-90deg)' }}>
+          <circle cx="20" cy="20" r={r} fill="none" stroke="var(--border)" strokeWidth="3"/>
+          <circle cx="20" cy="20" r={r} fill="none" stroke="var(--accent)" strokeWidth="3"
+            strokeDasharray={circ} strokeDashoffset={circ * (1 - pct/100)}
+            strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s linear' }}/>
         </svg>
         <div style={{
-          position: 'absolute', inset: 0, display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-          fontSize: 10, fontWeight: 700, color: running ? 'var(--accent)' : 'var(--dim)',
+          position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
+          fontSize: 9, fontWeight: 700, color: running ? 'var(--accent)' : 'var(--dim)',
           fontFamily: "'Barlow Condensed', sans-serif"
-        }}>
-          {remaining}s
-        </div>
+        }}>{rem}s</div>
       </div>
       <button onClick={() => {
-        if (running) { clearInterval(ref.current); setRunning(false); setRemaining(seconds); }
+        if (running) { clearInterval(ref.current); setRunning(false); setRem(seconds); }
         else setRunning(true);
       }} style={{
-        padding: '8px 16px', borderRadius: 8,
-        background: running ? 'rgba(200,241,53,0.1)' : 'var(--surface)',
+        padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+        background: running ? 'var(--glow)' : 'var(--surface)',
         border: `1px solid ${running ? 'var(--accent)' : 'var(--border)'}`,
-        color: running ? 'var(--accent)' : 'var(--dim)',
-        fontSize: 12, fontWeight: 600, cursor: 'pointer'
+        color: running ? 'var(--accent)' : 'var(--dim)'
       }}>
-        {running ? '⏹ Stop' : '▶ Rest Timer'}
+        {running ? '⏹ Stop' : `▶ Rest ${seconds}s`}
       </button>
     </div>
   );
 }
 
-function WorkoutView({ plan, rapidApiKey, onBack }) {
-  const [day, setDay] = useState(0);
+// ─── EXERCISE CARD ────────────────────────────────────────────────────────────
+function ExCard({ ex, rapidKey }) {
+  const [open, setOpen] = useState(false);
+  const [exData, setExData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [sets, setSets] = useState(Array(ex.sets).fill(false));
+  const loaded = useRef(false);
+
+  useEffect(() => {
+    if (loaded.current) return;
+    loaded.current = true;
+    setLoading(true);
+    findExercise(ex.search_name, rapidKey).then(d => {
+      setExData(d);
+      setLoading(false);
+    });
+  }, []);
+
+  const done = sets.filter(Boolean).length;
+  const allDone = done === ex.sets;
 
   return (
-    <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      {/* Day tabs */}
-      <div style={{
-        padding: '10px 16px', borderBottom: '1px solid var(--border)',
-        overflowX: 'auto', display: 'flex', gap: 6
+    <div style={{
+      background: allDone ? 'rgba(200,241,53,0.04)' : 'var(--card)',
+      border: `1px solid ${allDone ? 'rgba(200,241,53,0.25)' : 'var(--border)'}`,
+      borderRadius: 14, overflow: 'hidden', transition: 'all 0.2s'
+    }}>
+      {/* Row */}
+      <div onClick={() => setOpen(o => !o)} style={{
+        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', cursor: 'pointer'
       }}>
-        {plan.days.map((d, i) => (
-          <button key={i} onClick={() => setDay(i)} style={{
-            flexShrink: 0, padding: '6px 12px', borderRadius: 8,
-            background: day === i ? 'var(--accent)' : 'var(--surface)',
-            border: `1px solid ${day === i ? 'var(--accent)' : 'var(--border)'}`,
-            color: day === i ? 'var(--bg)' : 'var(--dim)',
-            fontSize: 11, fontWeight: 700, cursor: 'pointer',
-            fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5
+        {/* Thumb */}
+        <div style={{
+          width: 52, height: 52, borderRadius: 10, background: 'var(--surface)',
+          flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          {loading ? <Spinner size={16}/> :
+           exData ? (
+            <img
+              src={gifUrl(exData.id, rapidKey)}
+              alt={exData.name}
+              style={{ width:'100%', height:'100%', objectFit:'cover' }}
+              onError={e => { e.target.style.display='none'; e.target.parentNode.innerHTML='<span style="font-size:22px">💪</span>'; }}
+            />
+           ) : <span style={{ fontSize: 22 }}>💪</span>}
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 13, fontWeight: 600, color: allDone ? 'var(--accent)' : 'var(--text)',
+            overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'
           }}>
-            G{i + 1}
-          </button>
+            {exData?.name || ex.name}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
+            {ex.sets} × {ex.reps} · rest {ex.rest_seconds}s
+          </div>
+          {exData && (
+            <div style={{ fontSize: 10, color: 'rgba(200,241,53,0.6)', marginTop: 1 }}>
+              {exData.target} · {exData.equipment}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+          <span style={{ fontSize:11, fontWeight:700, color: allDone ? 'var(--accent)' : 'var(--dim)' }}>
+            {done}/{ex.sets}
+          </span>
+          <span style={{ fontSize:10, color:'var(--dim)', transition:'transform 0.2s', display:'inline-block', transform: open?'rotate(180deg)':'none' }}>▼</span>
+        </div>
+      </div>
+
+      {/* Expanded */}
+      {open && (
+        <div className="fade-up" style={{ borderTop:'1px solid var(--border)', padding:'12px 14px' }}>
+
+          {/* GIF grande */}
+          {exData && (
+            <div style={{
+              borderRadius:10, overflow:'hidden', background:'var(--surface)',
+              marginBottom:12, display:'flex', justifyContent:'center', minHeight:160
+            }}>
+              <img
+                src={gifUrl(exData.id, rapidKey)}
+                alt={exData.name}
+                style={{ maxHeight:220, objectFit:'contain' }}
+                onError={e => { e.target.style.display='none'; }}
+              />
+            </div>
+          )}
+
+          {/* Note coach */}
+          {ex.notes && (
+            <div style={{
+              background:'var(--glow)', border:'1px solid rgba(200,241,53,0.12)',
+              borderRadius:8, padding:'8px 12px', marginBottom:10,
+              fontSize:12, color:'var(--text)', lineHeight:1.6
+            }}>
+              <span style={{ color:'var(--accent)', fontWeight:600 }}>Coach: </span>{ex.notes}
+            </div>
+          )}
+
+          {/* Istruzioni */}
+          {exData?.instructions?.length > 0 && (
+            <div style={{ marginBottom:12 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:'var(--dim)', letterSpacing:1, marginBottom:6 }}>ESECUZIONE</div>
+              {exData.instructions.slice(0,3).map((s,i) => (
+                <div key={i} style={{
+                  fontSize:11, color:'var(--dim)', lineHeight:1.5, marginBottom:4,
+                  paddingLeft:10, borderLeft:'2px solid var(--border)'
+                }}>{s}</div>
+              ))}
+            </div>
+          )}
+
+          {/* Set tracker */}
+          <div style={{ fontSize:10, fontWeight:700, color:'var(--dim)', letterSpacing:1, marginBottom:8 }}>SERIE</div>
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:4 }}>
+            {sets.map((s,i) => (
+              <button key={i} onClick={() => setSets(prev => { const n=[...prev]; n[i]=!n[i]; return n; })}
+                style={{
+                  width:42, height:42, borderRadius:10, cursor:'pointer',
+                  background: s ? 'var(--accent)' : 'var(--surface)',
+                  border: `1px solid ${s ? 'var(--accent)' : 'var(--border)'}`,
+                  color: s ? 'var(--bg)' : 'var(--dim)',
+                  fontWeight:700, fontSize:13, fontFamily:"'Barlow Condensed', sans-serif",
+                  transition:'all 0.15s'
+                }}>
+                {s ? '✓' : i+1}
+              </button>
+            ))}
+          </div>
+
+          <RestTimer seconds={ex.rest_seconds} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── WORKOUT VIEW ─────────────────────────────────────────────────────────────
+function WorkoutView({ plan, rapidKey }) {
+  const [day, setDay] = useState(0);
+  const d = plan.days[day];
+
+  return (
+    <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+      {/* Day tabs */}
+      <div style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)', display:'flex', gap:6, overflowX:'auto' }}>
+        {plan.days.map((d,i) => (
+          <button key={i} onClick={() => setDay(i)} style={{
+            flexShrink:0, padding:'6px 14px', borderRadius:8,
+            background: day===i ? 'var(--accent)' : 'var(--surface)',
+            border: `1px solid ${day===i ? 'var(--accent)' : 'var(--border)'}`,
+            color: day===i ? 'var(--bg)' : 'var(--dim)',
+            fontSize:11, fontWeight:700, cursor:'pointer',
+            fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:0.5
+          }}>G{i+1}</button>
         ))}
       </div>
 
-      {/* Day content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
-        {plan.days[day] && (
+      <div style={{ flex:1, overflowY:'auto', padding:16 }}>
+        {d && (
           <>
-            <div style={{ marginBottom: 16 }}>
-              <div style={{
-                fontFamily: "'Barlow Condensed', sans-serif",
-                fontSize: 22, fontWeight: 800, letterSpacing: 0.5,
-                color: 'var(--text)'
-              }}>
-                {plan.days[day].day}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--accent)', marginTop: 2 }}>
-                {plan.days[day].focus}
-              </div>
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:20, fontWeight:800 }}>{d.day}</div>
+              <div style={{ fontSize:12, color:'var(--accent)', marginTop:2 }}>{d.focus}</div>
             </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {plan.days[day].exercises?.map((ex, i) => (
-                <div key={i} className="fade-up" style={{ animationDelay: `${i * 0.05}s` }}>
-                  <ExerciseCard ex={ex} rapidApiKey={rapidApiKey} />
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              {d.exercises?.map((ex,i) => (
+                <div key={i} className="fade-up" style={{ animationDelay:`${i*0.04}s` }}>
+                  <ExCard ex={ex} rapidKey={rapidKey} />
                 </div>
               ))}
             </div>
@@ -382,320 +336,229 @@ function WorkoutView({ plan, rapidApiKey, onBack }) {
   );
 }
 
+// ─── CHAT VIEW ────────────────────────────────────────────────────────────────
 function ChatView({ msgs, busy, inp, setInp, onSend }) {
   const endRef = useRef(null);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, busy]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior:'smooth' }); }, [msgs, busy]);
 
   return (
-    <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
-        {msgs.map((m, i) => (
-          <div key={i} style={{
-            marginBottom: 12, display: 'flex',
-            justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start'
-          }}>
+    <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+      <div style={{ flex:1, overflowY:'auto', padding:16 }}>
+        {msgs.map((m,i) => (
+          <div key={i} style={{ marginBottom:10, display:'flex', justifyContent:m.role==='user'?'flex-end':'flex-start' }}>
             <div style={{
-              maxWidth: '85%', padding: '10px 14px', borderRadius: 14,
-              background: m.role === 'user' ? 'var(--accent)' : 'var(--card)',
-              color: m.role === 'user' ? 'var(--bg)' : 'var(--text)',
-              border: m.role === 'user' ? 'none' : '1px solid var(--border)',
-              fontSize: 13, lineHeight: 1.6,
-              borderBottomRightRadius: m.role === 'user' ? 4 : 14,
-              borderBottomLeftRadius: m.role === 'assistant' ? 4 : 14,
-              whiteSpace: 'pre-wrap'
-            }}>
-              {m.content}
-            </div>
+              maxWidth:'85%', padding:'10px 14px', borderRadius:14, fontSize:13, lineHeight:1.6,
+              background: m.role==='user' ? 'var(--accent)' : 'var(--card)',
+              color: m.role==='user' ? 'var(--bg)' : 'var(--text)',
+              border: m.role==='user' ? 'none' : '1px solid var(--border)',
+              borderBottomRightRadius: m.role==='user' ? 4 : 14,
+              borderBottomLeftRadius: m.role==='assistant' ? 4 : 14,
+              whiteSpace:'pre-wrap'
+            }}>{m.content}</div>
           </div>
         ))}
         {busy && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 0' }}>
-            <Spinner size={16} />
-            <span style={{ fontSize: 12, color: 'var(--dim)' }}>Iron Coach sta pensando...</span>
+          <div style={{ display:'flex', gap:8, alignItems:'center', padding:'4px 0' }}>
+            <Spinner size={14}/>
+            <span style={{ fontSize:12, color:'var(--dim)' }}>Iron Coach sta elaborando...</span>
           </div>
         )}
-        <div ref={endRef} />
+        <div ref={endRef}/>
       </div>
 
       <div style={{
-        padding: '12px 16px', borderTop: '1px solid var(--border)',
-        background: 'var(--surface)', display: 'flex', gap: 8
+        padding:'12px 16px', borderTop:'1px solid var(--border)',
+        background:'var(--surface)', display:'flex', gap:8, alignItems:'flex-end'
       }}>
-        <textarea
-          value={inp}
-          onChange={e => setInp(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }}
-          placeholder="Scrivi al tuo coach..."
-          rows={1}
+        <textarea value={inp} onChange={e => setInp(e.target.value)}
+          onKeyDown={e => { if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); onSend(); }}}
+          placeholder="Scrivi al tuo coach..." rows={1}
           style={{
-            flex: 1, background: 'var(--card)', border: '1px solid var(--border)',
-            borderRadius: 12, padding: '10px 14px', color: 'var(--text)',
-            fontSize: 14, fontFamily: 'DM Sans, sans-serif', resize: 'none',
-            lineHeight: 1.5
-          }}
-        />
-        <button onClick={onSend} disabled={busy || !inp.trim()} style={{
-          width: 44, height: 44, borderRadius: 12, flexShrink: 0,
-          background: inp.trim() && !busy ? 'var(--accent)' : 'var(--border)',
-          border: 'none', cursor: inp.trim() && !busy ? 'pointer' : 'default',
-          color: inp.trim() && !busy ? 'var(--bg)' : 'var(--dim)',
-          fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'all 0.15s ease'
+            flex:1, background:'var(--card)', border:'1px solid var(--border)',
+            borderRadius:12, padding:'10px 14px', color:'var(--text)',
+            fontSize:14, fontFamily:'DM Sans, sans-serif', resize:'none', lineHeight:1.5
+          }}/>
+        <button onClick={onSend} disabled={busy||!inp.trim()} style={{
+          width:42, height:42, borderRadius:12, flexShrink:0, border:'none',
+          background: inp.trim()&&!busy ? 'var(--accent)' : 'var(--border)',
+          color: inp.trim()&&!busy ? 'var(--bg)' : 'var(--dim)',
+          fontSize:18, cursor: inp.trim()&&!busy ? 'pointer' : 'default',
+          display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.15s'
         }}>
-          {busy ? <Spinner size={16} color="var(--dim)" /> : '↑'}
+          {busy ? <Spinner size={14}/> : '↑'}
         </button>
       </div>
     </div>
   );
 }
 
-// ─── SETUP SCREEN ─────────────────────────────────────────────────────────────
-function SetupScreen({ onComplete }) {
-  const [anthropicKey, setAnthropicKey] = useState('');
-  const [rapidKey, setRapidKey] = useState('');
+// ─── SETUP ────────────────────────────────────────────────────────────────────
+function Setup({ onDone }) {
+  const [ak, setAk] = useState('');
+  const [rk, setRk] = useState('');
   const [step, setStep] = useState(1);
 
-  const proceed = () => {
-    if (step === 1 && anthropicKey.trim()) setStep(2);
-    else if (step === 2 && rapidKey.trim()) onComplete(anthropicKey.trim(), rapidKey.trim());
-  };
-
   return (
-    <div style={{
-      minHeight: '100vh', background: 'var(--bg)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
-    }}>
-      <div style={{ maxWidth: 380, width: '100%' }}>
-        {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{
-            fontFamily: "'Barlow Condensed', sans-serif",
-            fontSize: 42, fontWeight: 900, letterSpacing: 2,
-            color: 'var(--text)'
-          }}>
-            <span style={{ color: 'var(--accent)' }}>IRON</span> COACH
+    <div style={{ minHeight:'100vh', background:'var(--bg)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+      <div style={{ maxWidth:360, width:'100%' }}>
+        <div style={{ textAlign:'center', marginBottom:28 }}>
+          <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:44, fontWeight:900, letterSpacing:2 }}>
+            <span style={{ color:'var(--accent)' }}>IRON</span> COACH
           </div>
-          <div style={{ fontSize: 11, color: 'var(--dim)', letterSpacing: 3, marginTop: 2 }}>
-            AI WORKOUT PLANNER · 11K EXERCISES
-          </div>
+          <div style={{ fontSize:10, color:'var(--dim)', letterSpacing:3, marginTop:2 }}>AI · 11K EXERCISES · FREE PLAN</div>
         </div>
 
-        <div style={{
-          background: 'var(--card)', borderRadius: 18, padding: 24,
-          border: '1px solid var(--border)'
-        }}>
-          {/* Step indicator */}
-          <div style={{ display: 'flex', gap: 6, marginBottom: 24 }}>
-            {[1, 2].map(s => (
-              <div key={s} style={{
-                flex: 1, height: 3, borderRadius: 2,
-                background: s <= step ? 'var(--accent)' : 'var(--border)',
-                transition: 'background 0.3s'
-              }} />
+        <div style={{ background:'var(--card)', borderRadius:16, padding:22, border:'1px solid var(--border)' }}>
+          <div style={{ display:'flex', gap:5, marginBottom:20 }}>
+            {[1,2].map(s => (
+              <div key={s} style={{ flex:1, height:3, borderRadius:2, background: s<=step ? 'var(--accent)' : 'var(--border)', transition:'background 0.3s' }}/>
             ))}
           </div>
 
-          {step === 1 ? (
-            <>
-              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
-                🤖 Anthropic API Key
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 16, lineHeight: 1.5 }}>
-                Per la chat AI. Prendila da <span style={{ color: 'var(--accent)' }}>console.anthropic.com</span> → API Keys
-              </div>
-              <input
-                type="password"
-                value={anthropicKey}
-                onChange={e => setAnthropicKey(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && proceed()}
-                placeholder="sk-ant-..."
-                style={{
-                  width: '100%', padding: '12px 14px',
-                  background: 'var(--surface)', border: '1px solid var(--border)',
-                  borderRadius: 10, color: 'var(--text)', fontSize: 14,
-                  fontFamily: 'DM Sans, sans-serif', marginBottom: 12
-                }}
-              />
-            </>
-          ) : (
-            <>
-              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
-                🏋️ RapidAPI Key (ExerciseDB)
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 16, lineHeight: 1.5 }}>
-                Per le GIF degli esercizi. Da <span style={{ color: 'var(--accent)' }}>rapidapi.com</span> → ExerciseDB → Subscribe → Dashboard
-              </div>
-              <input
-                type="password"
-                value={rapidKey}
-                onChange={e => setRapidKey(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && proceed()}
-                placeholder="x-rapidapi-key..."
-                style={{
-                  width: '100%', padding: '12px 14px',
-                  background: 'var(--surface)', border: '1px solid var(--border)',
-                  borderRadius: 10, color: 'var(--text)', fontSize: 14,
-                  fontFamily: 'DM Sans, sans-serif', marginBottom: 12
-                }}
-              />
-            </>
-          )}
-
-          <button
-            onClick={proceed}
-            disabled={step === 1 ? !anthropicKey.trim() : !rapidKey.trim()}
-            style={{
-              width: '100%', padding: 14, borderRadius: 10, border: 'none',
-              background: (step === 1 ? anthropicKey.trim() : rapidKey.trim()) ? 'var(--accent)' : 'var(--border)',
-              color: (step === 1 ? anthropicKey.trim() : rapidKey.trim()) ? 'var(--bg)' : 'var(--dim)',
-              fontWeight: 700, fontSize: 15, cursor: 'pointer',
-              fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 1
-            }}
-          >
-            {step === 1 ? 'AVANTI →' : 'INIZIA L\'ALLENAMENTO →'}
-          </button>
+          {step === 1 ? <>
+            <div style={{ fontSize:14, fontWeight:600, marginBottom:6 }}>🤖 Anthropic API Key</div>
+            <div style={{ fontSize:12, color:'var(--dim)', lineHeight:1.5, marginBottom:14 }}>
+              Per la chat AI. Da <span style={{ color:'var(--accent)' }}>console.anthropic.com</span> → API Keys
+            </div>
+            <input type="password" value={ak} onChange={e=>setAk(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&ak.trim()&&setStep(2)}
+              placeholder="sk-ant-..."
+              style={{ width:'100%', padding:'11px 13px', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, color:'var(--text)', fontSize:14, fontFamily:'DM Sans', marginBottom:12 }}/>
+            <button onClick={()=>ak.trim()&&setStep(2)} disabled={!ak.trim()} style={{
+              width:'100%', padding:13, borderRadius:10, border:'none',
+              background: ak.trim() ? 'var(--accent)' : 'var(--border)',
+              color: ak.trim() ? 'var(--bg)' : 'var(--dim)',
+              fontWeight:700, fontSize:14, cursor: ak.trim()?'pointer':'default',
+              fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:1
+            }}>AVANTI →</button>
+          </> : <>
+            <div style={{ fontSize:14, fontWeight:600, marginBottom:6 }}>🏋️ RapidAPI Key</div>
+            <div style={{ fontSize:12, color:'var(--dim)', lineHeight:1.5, marginBottom:14 }}>
+              Per le GIF. Da <span style={{ color:'var(--accent)' }}>rapidapi.com</span> → ExerciseDB → Dashboard → X-RapidAPI-Key
+            </div>
+            <input type="password" value={rk} onChange={e=>setRk(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&rk.trim()&&onDone(ak,rk)}
+              placeholder="x-rapidapi-key..."
+              style={{ width:'100%', padding:'11px 13px', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, color:'var(--text)', fontSize:14, fontFamily:'DM Sans', marginBottom:12 }}/>
+            <button onClick={()=>rk.trim()&&onDone(ak,rk)} disabled={!rk.trim()} style={{
+              width:'100%', padding:13, borderRadius:10, border:'none',
+              background: rk.trim() ? 'var(--accent)' : 'var(--border)',
+              color: rk.trim() ? 'var(--bg)' : 'var(--dim)',
+              fontWeight:700, fontSize:14, cursor: rk.trim()?'pointer':'default',
+              fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:1
+            }}>INIZIA →</button>
+          </>}
         </div>
-
-        <div style={{ textAlign: 'center', marginTop: 16, fontSize: 11, color: 'var(--dim)' }}>
-          Le key restano solo in memoria · Non vengono salvate
+        <div style={{ textAlign:'center', marginTop:12, fontSize:11, color:'var(--dim)' }}>
+          Le key restano solo in memoria · Non vengono mai salvate
         </div>
       </div>
     </div>
   );
 }
 
-// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+// ─── APP ──────────────────────────────────────────────────────────────────────
 function App() {
-  const [anthropicKey, setAnthropicKey] = useState('');
-  const [rapidKey, setRapidKey] = useState('');
+  const [ak, setAk] = useState('');
+  const [rk, setRk] = useState('');
   const [ready, setReady] = useState(false);
   const [view, setView] = useState('chat');
+  const [plan, setPlan] = useState(null);
   const [msgs, setMsgs] = useState([{
-    role: 'assistant',
-    content: 'Ciao! Sono il tuo Iron Coach 💪\n\nHo accesso a 11.000+ esercizi con GIF animate, da forza a mobilità a pliometria.\n\nDimmi:\n→ Obiettivo?\n→ Giorni/settimana?\n→ Attrezzatura disponibile?\n→ Livello e limitazioni?'
+    role:'assistant',
+    content:'Ciao! Sono Iron Coach 💪\n\nAccedo a 11.000+ esercizi con GIF animate — forza, mobilità, pliometria, tutto.\n\nDimmi:\n→ Obiettivo?\n→ Giorni a settimana?\n→ Attrezzatura disponibile?\n→ Livello e zone da evitare?'
   }]);
   const [inp, setInp] = useState('');
   const [busy, setBusy] = useState(false);
-  const [plan, setPlan] = useState(null);
 
-  const handleSetup = (ak, rk) => {
-    setAnthropicKey(ak);
-    setRapidKey(rk);
-    setReady(true);
-  };
-
-  const parsePlan = (txt) => {
+  const parsePlan = txt => {
     const m = txt.match(/```json\s*([\s\S]*?)\s*```/);
-    if (m) { try { return JSON.parse(m[1]).workout_plan || null; } catch(e) {} }
+    if(m) { try { return JSON.parse(m[1]).workout_plan||null; } catch(e){} }
     return null;
   };
 
   const send = async () => {
-    if (!inp.trim() || busy) return;
-    const um = { role: 'user', content: inp.trim() };
+    if(!inp.trim()||busy) return;
+    const um = { role:'user', content:inp.trim() };
     const nm = [...msgs, um];
     setMsgs(nm); setInp(''); setBusy(true);
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json',
+          'x-api-key': ak,
+          'anthropic-version':'2023-06-01',
+          'anthropic-dangerous-direct-browser-access':'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 4000,
+          model:'claude-sonnet-4-20250514',
+          max_tokens:4000,
           system: SYSTEM,
-          messages: nm.map(m => ({ role: m.role, content: m.content }))
+          messages: nm.map(m=>({role:m.role,content:m.content}))
         })
       });
       const data = await res.json();
-      if (data.error) {
-        setMsgs([...nm, { role: 'assistant', content: `❌ Errore API: ${data.error.message}` }]);
-        setBusy(false); return;
-      }
-      const txt = data.content?.map(c => c.text || '').join('') || '';
+      if(data.error){ setMsgs([...nm,{role:'assistant',content:`❌ ${data.error.message}`}]); setBusy(false); return; }
+      const txt = data.content?.map(c=>c.text||'').join('')||'';
       const p = parsePlan(txt);
-      if (p) {
+      if(p){
         setPlan(p);
-        const show = txt.replace(/```json[\s\S]*?```/, '').trim();
-        setMsgs([...nm, { role: 'assistant', content: show + '\n\n✅ Scheda generata! Tocca "SCHEDA" per iniziare.' }]);
+        const show = txt.replace(/```json[\s\S]*?```/,'').trim();
+        setMsgs([...nm,{role:'assistant',content:show+'\n\n✅ Scheda pronta! Vai su SCHEDA per allenarti.'}]);
         setView('workout');
       } else {
-        setMsgs([...nm, { role: 'assistant', content: txt }]);
+        setMsgs([...nm,{role:'assistant',content:txt}]);
       }
-    } catch(e) {
-      setMsgs([...nm, { role: 'assistant', content: '❌ Errore di connessione. Riprova.' }]);
+    } catch(e){
+      setMsgs([...nm,{role:'assistant',content:'❌ Errore connessione. Riprova.'}]);
     }
     setBusy(false);
   };
 
-  if (!ready) return <SetupScreen onComplete={handleSetup} />;
+  if(!ready) return <Setup onDone={(a,r)=>{ setAk(a); setRk(r); setReady(true); }}/>;
 
   return (
-    <div style={{
-      minHeight: '100vh', background: 'var(--bg)',
-      maxWidth: 480, margin: '0 auto',
-      display: 'flex', flexDirection: 'column'
-    }}>
+    <div style={{ minHeight:'100vh', background:'var(--bg)', maxWidth:480, margin:'0 auto', display:'flex', flexDirection:'column' }}>
       {/* Header */}
-      <div style={{
-        padding: '12px 16px', borderBottom: '1px solid var(--border)',
-        background: 'var(--surface)', position: 'sticky', top: 0, zIndex: 100
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+      <div style={{ padding:'12px 16px', borderBottom:'1px solid var(--border)', background:'var(--surface)', position:'sticky', top:0, zIndex:100 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
           <div>
-            <div style={{
-              fontFamily: "'Barlow Condensed', sans-serif",
-              fontSize: 22, fontWeight: 900, letterSpacing: 1
-            }}>
-              <span style={{ color: 'var(--accent)' }}>IRON</span> COACH
+            <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:22, fontWeight:900, letterSpacing:1 }}>
+              <span style={{ color:'var(--accent)' }}>IRON</span> COACH
             </div>
-            <div style={{ fontSize: 9, color: 'var(--dim)', letterSpacing: 2 }}>11K EXERCISES · AI POWERED</div>
+            <div style={{ fontSize:9, color:'var(--dim)', letterSpacing:2 }}>11K EXERCISES · AI POWERED</div>
           </div>
           {plan && (
-            <div style={{
-              fontSize: 10, color: 'var(--accent)', background: 'var(--glow)',
-              padding: '4px 10px', borderRadius: 20, fontWeight: 700,
-              border: '1px solid rgba(200,241,53,0.2)',
-              fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 1
-            }}>
+            <div style={{ fontSize:10, color:'var(--accent)', background:'var(--glow)', padding:'4px 10px', borderRadius:20, fontWeight:700, border:'1px solid rgba(200,241,53,0.2)', fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:1, maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
               {plan.title}
             </div>
           )}
         </div>
-
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 4 }}>
-          {['chat', 'workout'].map(t => (
-            <button key={t} onClick={() => setView(t)}
-              disabled={t === 'workout' && !plan}
+        <div style={{ display:'flex', gap:4 }}>
+          {['chat','workout'].map(t => (
+            <button key={t} onClick={()=>setView(t)} disabled={t==='workout'&&!plan}
               style={{
-                flex: 1, padding: '8px 0', borderRadius: 10,
-                background: view === t ? 'var(--accent)' : 'transparent',
-                color: view === t ? 'var(--bg)' : t === 'workout' && !plan ? 'var(--border)' : 'var(--dim)',
-                border: view === t ? 'none' : `1px solid ${t === 'workout' && !plan ? 'var(--border)' : 'var(--border)'}`,
-                fontWeight: 700, fontSize: 12, cursor: t === 'workout' && !plan ? 'default' : 'pointer',
-                fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 1
+                flex:1, padding:'8px 0', borderRadius:10, border:'none', cursor: t==='workout'&&!plan?'default':'pointer',
+                background: view===t ? 'var(--accent)' : 'var(--surface)',
+                color: view===t ? 'var(--bg)' : t==='workout'&&!plan ? 'var(--border)' : 'var(--dim)',
+                fontWeight:700, fontSize:12, fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:1
               }}>
-              {t === 'chat' ? '💬 CHAT' : '🏋️ SCHEDA'}
+              {t==='chat' ? '💬 CHAT' : '🏋️ SCHEDA'}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Content */}
-      {view === 'chat'
-        ? <ChatView msgs={msgs} busy={busy} inp={inp} setInp={setInp} onSend={send} />
-        : plan && <WorkoutView plan={plan} rapidApiKey={rapidKey} onBack={() => setView('chat')} />
+      {view==='chat'
+        ? <ChatView msgs={msgs} busy={busy} inp={inp} setInp={setInp} onSend={send}/>
+        : plan && <WorkoutView plan={plan} rapidKey={rk}/>
       }
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById('app')).render(<App />);
+ReactDOM.createRoot(document.getElementById('app')).render(<App/>);
 </script>
 </body>
 </html>
