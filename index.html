@@ -5,560 +5,539 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#080810">
-  <title>IRON COACH</title>
-  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#090910">
+  <title>IRON COACH - AI Workout Planner</title>
+  <link rel="manifest" href="data:application/json,{&quot;name&quot;:&quot;IRON COACH&quot;,&quot;short_name&quot;:&quot;IronCoach&quot;,&quot;start_url&quot;:&quot;.&quot;,&quot;display&quot;:&quot;standalone&quot;,&quot;background_color&quot;:&quot;%23090910&quot;,&quot;theme_color&quot;:&quot;%23090910&quot;}">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root {
-      --bg: #080810; --surface: #0f0f1a; --card: #13131f;
-      --border: #1e1e2e; --text: #e8e8f0; --dim: #6b6b8a;
-      --accent: #c8f135; --glow: rgba(200,241,53,0.08);
-    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+    body { background: #090910; color: #e8e8f0; font-family: 'DM Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
     input:focus, textarea:focus { outline: none; }
-    ::-webkit-scrollbar { width: 2px; }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-    @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    @keyframes dot { 0%,100%{opacity:.3} 50%{opacity:1} }
-    .fade-up { animation: fadeUp 0.25s ease forwards; }
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-thumb { background: #252538; border-radius: 3px; }
+    @keyframes dot { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .fade-in { animation: fadeIn 0.3s ease; }
   </style>
 </head>
 <body>
 <div id="app"></div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
-// ─── SYSTEM PROMPT ────────────────────────────────────────────────────────────
-const SYSTEM = `Sei IRON COACH, un AI coach fitness d'élite. Parli italiano, sei diretto e motivante.
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const C = {
+  bg:"#090910", surface:"#111119", card:"#19192a",
+  accent:"#00e68a", accentGlow:"rgba(0,230,138,0.1)",
+  blue:"#4488ff", blueGlow:"rgba(68,136,255,0.15)",
+  text:"#e8e8f0", textDim:"#6e6e88", border:"#252538",
+  warning:"#ffa726", chatU:"#162040", chatA:"#0d1e14"
+};
 
-Quando l'utente vuole una scheda, raccogli prima: obiettivo, giorni/settimana, attrezzatura, livello, limitazioni fisiche.
+const DB_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json";
+const IMG_BASE = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/";
 
-Quando hai tutto, genera il piano in questo JSON esatto (dentro backtick json):
+// ─── STORAGE ──────────────────────────────────────────────────────────────────
+const getKey = () => localStorage.getItem("ic_anthropic_key") || "";
+const setKey = (k) => localStorage.setItem("ic_anthropic_key", k);
+const getSavedPlans = () => { try { return JSON.parse(localStorage.getItem("ic_saved_plans") || "[]"); } catch { return []; } };
+const savePlan = (plan) => {
+  const plans = getSavedPlans();
+  const entry = { id: Date.now(), savedAt: new Date().toISOString(), plan };
+  plans.unshift(entry);
+  if (plans.length > 30) plans.pop();
+  localStorage.setItem("ic_saved_plans", JSON.stringify(plans));
+  return entry.id;
+};
+const deleteSavedPlan = (id) => {
+  const plans = getSavedPlans().filter(p => p.id !== id);
+  localStorage.setItem("ic_saved_plans", JSON.stringify(plans));
+};
 
-\`\`\`json
-{
-  "workout_plan": {
-    "title": "Nome scheda",
-    "goal": "obiettivo",
-    "days_per_week": 4,
-    "days": [
-      {
-        "day": "Giorno 1 - Push",
-        "focus": "Petto, Spalle, Tricipiti",
-        "exercises": [
-          {
-            "name": "Barbell Bench Press",
-            "search_name": "barbell bench press",
-            "sets": 4,
-            "reps": "8-10",
-            "rest_seconds": 90,
-            "notes": "Presa media, busto fermo sul panche"
-          }
-        ]
-      }
-    ]
+// ─── FUZZY EXERCISE MATCH ─────────────────────────────────────────────────────
+function normalize(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim(); }
+function matchScore(a, b) {
+  a = normalize(a); b = normalize(b);
+  if (a === b) return 100;
+  if (b.includes(a) || a.includes(b)) return 80;
+  const wa = a.split(" "); const wb = b.split(" ");
+  const common = wa.filter(w => w.length > 2 && wb.includes(w)).length;
+  return (common / Math.max(wa.length, wb.length)) * 60;
+}
+function findExercise(exercises, nameOrId) {
+  if (!exercises?.length || !nameOrId) return null;
+  // exact id match
+  const byId = exercises.find(e => e.id === nameOrId);
+  if (byId) return byId;
+  // fuzzy name
+  let best = null, bestScore = 0;
+  for (const e of exercises) {
+    const s = matchScore(nameOrId, e.name);
+    if (s > bestScore) { bestScore = s; best = e; }
   }
-}
-\`\`\`
-
-REGOLE per search_name (fondamentale per trovare le GIF):
-- Usa sempre INGLESE, minuscolo, termini precisi
-- Forza: "barbell squat", "deadlift", "bench press", "pull up", "dumbbell curl", "hip thrust", "overhead press"
-- Mobilità/stretching: "hip flexor stretch", "pigeon pose", "cat cow", "thoracic rotation", "ankle mobility", "shoulder mobility"
-- Pliometria: "box jump", "jump squat", "burpee", "broad jump", "lateral bound", "depth jump"
-- Core: "plank", "dead bug", "pallof press", "ab wheel rollout"
-- Max 6-8 esercizi per giorno. Sii specifico nelle note tecniche.`;
-
-// ─── EXERCISEDB HELPERS ───────────────────────────────────────────────────────
-async function findExercise(searchName, rapidKey) {
-  try {
-    const url = `https://exercisedb.p.rapidapi.com/exercises/name/${encodeURIComponent(searchName.toLowerCase())}?limit=5&offset=0`;
-    const res = await fetch(url, {
-      headers: {
-        'x-rapidapi-host': 'exercisedb.p.rapidapi.com',
-        'x-rapidapi-key': rapidKey
-      }
-    });
-    const data = await res.json();
-    if (Array.isArray(data) && data.length > 0) return data[0];
-    return null;
-  } catch(e) { return null; }
+  return bestScore >= 25 ? best : null;
 }
 
-function gifUrl(exerciseId, rapidKey) {
-  return `https://exercisedb.p.rapidapi.com/image?exerciseId=${exerciseId}&resolution=360&rapidapi-key=${rapidKey}`;
+// ─── FORMAT EXERCISE FOR AI ───────────────────────────────────────────────────
+function buildExerciseList(exercises) {
+  if (!exercises?.length) return "Database non ancora caricato.";
+  return exercises.map(e => `${e.name}[${e.category}](${(e.equipment||[]).join(",")||"body weight"})`).join(" | ");
 }
 
-// ─── SPINNER ──────────────────────────────────────────────────────────────────
-function Spinner({ size = 18 }) {
-  return <div style={{
-    width: size, height: size,
-    border: '2px solid var(--border)', borderTop: '2px solid var(--accent)',
-    borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block'
-  }} />;
-}
-
-// ─── REST TIMER ───────────────────────────────────────────────────────────────
-function RestTimer({ seconds }) {
-  const [running, setRunning] = useState(false);
-  const [rem, setRem] = useState(seconds);
-  const ref = useRef(null);
-
+// ─── COUNTDOWN TIMER OVERLAY ──────────────────────────────────────────────────
+function TimerOverlay({ sec, label, color, onDone, onSkip }) {
+  const [r, setR] = useState(sec);
+  const total = useRef(sec);
   useEffect(() => {
-    if (running) {
-      ref.current = setInterval(() => {
-        setRem(r => {
-          if (r <= 1) { clearInterval(ref.current); setRunning(false); return seconds; }
-          return r - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(ref.current);
-  }, [running]);
-
-  const pct = ((seconds - rem) / seconds) * 100;
-  const r = 16, circ = 2 * Math.PI * r;
-
+    if (r <= 0) { onDone(); return; }
+    const t = setTimeout(() => setR(x => x - 1), 1000);
+    return () => clearTimeout(t);
+  }, [r]);
+  const rd = 54, ci = 2 * Math.PI * rd;
+  const pct = r / total.current;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-      <div style={{ position: 'relative', width: 40, height: 40, flexShrink: 0 }}>
-        <svg width="40" height="40" style={{ transform: 'rotate(-90deg)' }}>
-          <circle cx="20" cy="20" r={r} fill="none" stroke="var(--border)" strokeWidth="3"/>
-          <circle cx="20" cy="20" r={r} fill="none" stroke="var(--accent)" strokeWidth="3"
-            strokeDasharray={circ} strokeDashoffset={circ * (1 - pct/100)}
-            strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s linear' }}/>
-        </svg>
-        <div style={{
-          position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
-          fontSize: 9, fontWeight: 700, color: running ? 'var(--accent)' : 'var(--dim)',
-          fontFamily: "'Barlow Condensed', sans-serif"
-        }}>{rem}s</div>
-      </div>
-      <button onClick={() => {
-        if (running) { clearInterval(ref.current); setRunning(false); setRem(seconds); }
-        else setRunning(true);
-      }} style={{
-        padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-        background: running ? 'var(--glow)' : 'var(--surface)',
-        border: `1px solid ${running ? 'var(--accent)' : 'var(--border)'}`,
-        color: running ? 'var(--accent)' : 'var(--dim)'
-      }}>
-        {running ? '⏹ Stop' : `▶ Rest ${seconds}s`}
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.94)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", zIndex:2000, gap:16 }}>
+      <div style={{ fontSize:11, color:color, letterSpacing:3, fontWeight:700 }}>{label}</div>
+      <svg width="200" height="200" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r={rd} fill="none" stroke={C.border} strokeWidth="5" />
+        <circle cx="60" cy="60" r={rd} fill="none" stroke={color} strokeWidth="5"
+          strokeDasharray={ci} strokeDashoffset={ci * (1 - pct)}
+          strokeLinecap="round" transform="rotate(-90 60 60)"
+          style={{ transition:"stroke-dashoffset 1s linear" }} />
+        <text x="60" y="55" textAnchor="middle" fill={C.text} fontSize="32" fontWeight="700">
+          {Math.floor(r/60)}:{(r%60).toString().padStart(2,"0")}
+        </text>
+        <text x="60" y="76" textAnchor="middle" fill={r<=3?color:C.textDim} fontSize="12">
+          {r<=3?"VAI!":label==="LAVORO"?"mantieni...":"respira..."}
+        </text>
+      </svg>
+      <button onClick={onSkip} style={{ padding:"10px 30px", background:"transparent", border:`1px solid ${C.border}`, borderRadius:10, color:C.textDim, cursor:"pointer", fontSize:14 }}>
+        {label==="LAVORO" ? "Fine serie ✓" : "Salta ⏩"}
       </button>
     </div>
   );
 }
 
-// ─── EXERCISE CARD ────────────────────────────────────────────────────────────
-function ExCard({ ex, rapidKey }) {
-  const [open, setOpen] = useState(false);
-  const [exData, setExData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [sets, setSets] = useState(Array(ex.sets).fill(false));
-  const loaded = useRef(false);
-
+// ─── IMAGE SLIDESHOW ──────────────────────────────────────────────────────────
+function ImgSlide({ images, name }) {
+  const [idx, setIdx] = useState(0);
+  const [err, setErr] = useState(false);
+  const [ok, setOk] = useState(false);
   useEffect(() => {
-    if (loaded.current) return;
-    loaded.current = true;
-    setLoading(true);
-    findExercise(ex.search_name, rapidKey).then(d => {
-      setExData(d);
-      setLoading(false);
-    });
-  }, []);
-
-  const done = sets.filter(Boolean).length;
-  const allDone = done === ex.sets;
-
+    if (!images || images.length <= 1) return;
+    const t = setInterval(() => setIdx(i => (i + 1) % images.length), 1400);
+    return () => clearInterval(t);
+  }, [images]);
+  const src = images?.[idx];
+  if (!src || err) return (
+    <div style={{ height:150, background:"#0e0e18", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, marginBottom:10 }}>🏋️</div>
+  );
   return (
-    <div style={{
-      background: allDone ? 'rgba(200,241,53,0.04)' : 'var(--card)',
-      border: `1px solid ${allDone ? 'rgba(200,241,53,0.25)' : 'var(--border)'}`,
-      borderRadius: 14, overflow: 'hidden', transition: 'all 0.2s'
-    }}>
-      {/* Row */}
-      <div onClick={() => setOpen(o => !o)} style={{
-        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', cursor: 'pointer'
-      }}>
-        {/* Thumb */}
-        <div style={{
-          width: 52, height: 52, borderRadius: 10, background: 'var(--surface)',
-          flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }}>
-          {loading ? <Spinner size={16}/> :
-           exData ? (
-            <img
-              src={gifUrl(exData.id, rapidKey)}
-              alt={exData.name}
-              style={{ width:'100%', height:'100%', objectFit:'cover' }}
-              onError={e => { e.target.style.display='none'; e.target.parentNode.innerHTML='<span style="font-size:22px">💪</span>'; }}
-            />
-           ) : <span style={{ fontSize: 22 }}>💪</span>}
-        </div>
-
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontSize: 13, fontWeight: 600, color: allDone ? 'var(--accent)' : 'var(--text)',
-            overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'
-          }}>
-            {exData?.name || ex.name}
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
-            {ex.sets} × {ex.reps} · rest {ex.rest_seconds}s
-          </div>
-          {exData && (
-            <div style={{ fontSize: 10, color: 'rgba(200,241,53,0.6)', marginTop: 1 }}>
-              {exData.target} · {exData.equipment}
-            </div>
-          )}
-        </div>
-
-        <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
-          <span style={{ fontSize:11, fontWeight:700, color: allDone ? 'var(--accent)' : 'var(--dim)' }}>
-            {done}/{ex.sets}
-          </span>
-          <span style={{ fontSize:10, color:'var(--dim)', transition:'transform 0.2s', display:'inline-block', transform: open?'rotate(180deg)':'none' }}>▼</span>
-        </div>
-      </div>
-
-      {/* Expanded */}
-      {open && (
-        <div className="fade-up" style={{ borderTop:'1px solid var(--border)', padding:'12px 14px' }}>
-
-          {/* GIF grande */}
-          {exData && (
-            <div style={{
-              borderRadius:10, overflow:'hidden', background:'var(--surface)',
-              marginBottom:12, display:'flex', justifyContent:'center', minHeight:160
-            }}>
-              <img
-                src={gifUrl(exData.id, rapidKey)}
-                alt={exData.name}
-                style={{ maxHeight:220, objectFit:'contain' }}
-                onError={e => { e.target.style.display='none'; }}
-              />
-            </div>
-          )}
-
-          {/* Note coach */}
-          {ex.notes && (
-            <div style={{
-              background:'var(--glow)', border:'1px solid rgba(200,241,53,0.12)',
-              borderRadius:8, padding:'8px 12px', marginBottom:10,
-              fontSize:12, color:'var(--text)', lineHeight:1.6
-            }}>
-              <span style={{ color:'var(--accent)', fontWeight:600 }}>Coach: </span>{ex.notes}
-            </div>
-          )}
-
-          {/* Istruzioni */}
-          {exData?.instructions?.length > 0 && (
-            <div style={{ marginBottom:12 }}>
-              <div style={{ fontSize:10, fontWeight:700, color:'var(--dim)', letterSpacing:1, marginBottom:6 }}>ESECUZIONE</div>
-              {exData.instructions.slice(0,3).map((s,i) => (
-                <div key={i} style={{
-                  fontSize:11, color:'var(--dim)', lineHeight:1.5, marginBottom:4,
-                  paddingLeft:10, borderLeft:'2px solid var(--border)'
-                }}>{s}</div>
-              ))}
-            </div>
-          )}
-
-          {/* Set tracker */}
-          <div style={{ fontSize:10, fontWeight:700, color:'var(--dim)', letterSpacing:1, marginBottom:8 }}>SERIE</div>
-          <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:4 }}>
-            {sets.map((s,i) => (
-              <button key={i} onClick={() => setSets(prev => { const n=[...prev]; n[i]=!n[i]; return n; })}
-                style={{
-                  width:42, height:42, borderRadius:10, cursor:'pointer',
-                  background: s ? 'var(--accent)' : 'var(--surface)',
-                  border: `1px solid ${s ? 'var(--accent)' : 'var(--border)'}`,
-                  color: s ? 'var(--bg)' : 'var(--dim)',
-                  fontWeight:700, fontSize:13, fontFamily:"'Barlow Condensed', sans-serif",
-                  transition:'all 0.15s'
-                }}>
-                {s ? '✓' : i+1}
-              </button>
-            ))}
-          </div>
-
-          <RestTimer seconds={ex.rest_seconds} />
+    <div style={{ position:"relative", borderRadius:12, overflow:"hidden", background:"#f0efe8", marginBottom:10, minHeight:ok?"auto":150 }}>
+      {!ok && <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}><span style={{ fontSize:11, color:"#999" }}>Caricamento…</span></div>}
+      <img src={src} alt={name}
+        style={{ width:"100%", maxHeight:230, objectFit:"contain", display:"block", margin:"0 auto", opacity:ok?1:0, transition:"opacity 0.3s" }}
+        onLoad={() => setOk(true)} onError={() => setErr(true)} />
+      {images.length > 1 && ok && (
+        <div style={{ position:"absolute", bottom:6, left:"50%", transform:"translateX(-50%)", display:"flex", gap:5 }}>
+          {images.map((_,i) => <div key={i} style={{ width:7, height:7, borderRadius:"50%", background:i===idx?C.accent:"rgba(0,0,0,0.2)" }} />)}
         </div>
       )}
     </div>
   );
 }
 
-// ─── WORKOUT VIEW ─────────────────────────────────────────────────────────────
-function WorkoutView({ plan, rapidKey }) {
-  const [day, setDay] = useState(0);
-  const d = plan.days[day];
+// ─── EXERCISE CARD ────────────────────────────────────────────────────────────
+function ExCard({ ex, data, idx, onStartTimer }) {
+  const [open, setOpen] = useState(false);
+  const [done, setDone] = useState(0);
+  const all = done >= (ex.sets || 3);
+  const isTime = !!(ex.duration);
+  const images = data ? data.images.map(p => IMG_BASE + p) : [];
+  const instructions = data?.instructions || [];
+
+  const handleSerie = () => {
+    if (all) return;
+    if (isTime) {
+      onStartTimer({ type:"work", sec: ex.duration, label:"LAVORO", color:C.blue,
+        onDone:() => { setDone(d => { const nd = d + 1; if (nd < ex.sets) onStartTimer({ type:"rest", sec:ex.rest||60, label:"RIPOSO", color:C.accent }); return nd; }); }
+      });
+    } else {
+      setDone(d => { const nd = d + 1; if (nd < ex.sets) onStartTimer({ type:"rest", sec:ex.rest||90, label:"RIPOSO", color:C.accent }); return nd; });
+    }
+  };
 
   return (
-    <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
-      {/* Day tabs */}
-      <div style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)', display:'flex', gap:6, overflowX:'auto' }}>
-        {plan.days.map((d,i) => (
-          <button key={i} onClick={() => setDay(i)} style={{
-            flexShrink:0, padding:'6px 14px', borderRadius:8,
-            background: day===i ? 'var(--accent)' : 'var(--surface)',
-            border: `1px solid ${day===i ? 'var(--accent)' : 'var(--border)'}`,
-            color: day===i ? 'var(--bg)' : 'var(--dim)',
-            fontSize:11, fontWeight:700, cursor:'pointer',
-            fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:0.5
-          }}>G{i+1}</button>
-        ))}
+    <div className="fade-in" style={{ background:all?"rgba(0,230,138,0.05)":C.card, border:`1px solid ${all?C.accent+"40":C.border}`, borderRadius:14, overflow:"hidden" }}>
+      <div onClick={() => setOpen(!open)} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", cursor:"pointer" }}>
+        <div style={{ width:32, height:32, borderRadius:8, flexShrink:0, background:all?C.accent:C.surface, color:all?C.bg:C.textDim, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700 }}>
+          {all ? "✓" : idx + 1}
+        </div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ color:C.text, fontSize:14, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{ex.name}</div>
+          <div style={{ color:C.textDim, fontSize:12, marginTop:1 }}>
+            {ex.sets}x{isTime ? `${ex.duration}s` : ex.reps}
+            {ex.weight ? ` · ${ex.weight}` : ""}
+            {" · "}{ex.rest || (isTime ? 60 : 90)}s riposo
+          </div>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          {isTime && <span style={{ fontSize:10, color:C.blue, background:C.blueGlow, padding:"2px 7px", borderRadius:10, fontWeight:700 }}>⏱</span>}
+          <span style={{ color:C.textDim, transition:"transform 0.2s", transform:open?"rotate(180deg)":"" }}>▾</span>
+        </div>
       </div>
 
-      <div style={{ flex:1, overflowY:'auto', padding:16 }}>
-        {d && (
-          <>
-            <div style={{ marginBottom:14 }}>
-              <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:20, fontWeight:800 }}>{d.day}</div>
-              <div style={{ fontSize:12, color:'var(--accent)', marginTop:2 }}>{d.focus}</div>
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              {d.exercises?.map((ex,i) => (
-                <div key={i} className="fade-up" style={{ animationDelay:`${i*0.04}s` }}>
-                  <ExCard ex={ex} rapidKey={rapidKey} />
+      {open && (
+        <div style={{ padding:"0 14px 14px" }}>
+          <ImgSlide images={images} name={ex.name} />
+
+          {instructions.length > 0 && (
+            <div style={{ marginBottom:10 }}>
+              {instructions.map((s,i) => (
+                <div key={i} style={{ display:"flex", gap:7, marginBottom:4, fontSize:13, color:C.textDim }}>
+                  <span style={{ color:C.accent, fontWeight:700, flexShrink:0 }}>{i+1}.</span>
+                  <span>{s}</span>
                 </div>
               ))}
             </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+          )}
 
-// ─── CHAT VIEW ────────────────────────────────────────────────────────────────
-function ChatView({ msgs, busy, inp, setInp, onSend }) {
-  const endRef = useRef(null);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior:'smooth' }); }, [msgs, busy]);
+          {data && (
+            <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:10 }}>
+              {[...(data.primaryMuscles||[]), ...(data.secondaryMuscles||[]).slice(0,2)].map(m => (
+                <span key={m} style={{ fontSize:10, color:C.textDim, background:C.surface, padding:"2px 8px", borderRadius:8, border:`1px solid ${C.border}` }}>{m}</span>
+              ))}
+            </div>
+          )}
 
-  return (
-    <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
-      <div style={{ flex:1, overflowY:'auto', padding:16 }}>
-        {msgs.map((m,i) => (
-          <div key={i} style={{ marginBottom:10, display:'flex', justifyContent:m.role==='user'?'flex-end':'flex-start' }}>
-            <div style={{
-              maxWidth:'85%', padding:'10px 14px', borderRadius:14, fontSize:13, lineHeight:1.6,
-              background: m.role==='user' ? 'var(--accent)' : 'var(--card)',
-              color: m.role==='user' ? 'var(--bg)' : 'var(--text)',
-              border: m.role==='user' ? 'none' : '1px solid var(--border)',
-              borderBottomRightRadius: m.role==='user' ? 4 : 14,
-              borderBottomLeftRadius: m.role==='assistant' ? 4 : 14,
-              whiteSpace:'pre-wrap'
-            }}>{m.content}</div>
-          </div>
-        ))}
-        {busy && (
-          <div style={{ display:'flex', gap:8, alignItems:'center', padding:'4px 0' }}>
-            <Spinner size={14}/>
-            <span style={{ fontSize:12, color:'var(--dim)' }}>Iron Coach sta elaborando...</span>
-          </div>
-        )}
-        <div ref={endRef}/>
-      </div>
+          {ex.notes && (
+            <div style={{ fontSize:12, color:C.warning, padding:"7px 11px", background:"rgba(255,167,38,0.08)", borderRadius:8, marginBottom:10 }}>
+              💡 {ex.notes}
+            </div>
+          )}
 
-      <div style={{
-        padding:'12px 16px', borderTop:'1px solid var(--border)',
-        background:'var(--surface)', display:'flex', gap:8, alignItems:'flex-end'
-      }}>
-        <textarea value={inp} onChange={e => setInp(e.target.value)}
-          onKeyDown={e => { if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); onSend(); }}}
-          placeholder="Scrivi al tuo coach..." rows={1}
-          style={{
-            flex:1, background:'var(--card)', border:'1px solid var(--border)',
-            borderRadius:12, padding:'10px 14px', color:'var(--text)',
-            fontSize:14, fontFamily:'DM Sans, sans-serif', resize:'none', lineHeight:1.5
-          }}/>
-        <button onClick={onSend} disabled={busy||!inp.trim()} style={{
-          width:42, height:42, borderRadius:12, flexShrink:0, border:'none',
-          background: inp.trim()&&!busy ? 'var(--accent)' : 'var(--border)',
-          color: inp.trim()&&!busy ? 'var(--bg)' : 'var(--dim)',
-          fontSize:18, cursor: inp.trim()&&!busy ? 'pointer' : 'default',
-          display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.15s'
-        }}>
-          {busy ? <Spinner size={14}/> : '↑'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── SETUP ────────────────────────────────────────────────────────────────────
-function Setup({ onDone }) {
-  const [ak, setAk] = useState('');
-  const [rk, setRk] = useState('');
-  const [step, setStep] = useState(1);
-
-  return (
-    <div style={{ minHeight:'100vh', background:'var(--bg)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
-      <div style={{ maxWidth:360, width:'100%' }}>
-        <div style={{ textAlign:'center', marginBottom:28 }}>
-          <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:44, fontWeight:900, letterSpacing:2 }}>
-            <span style={{ color:'var(--accent)' }}>IRON</span> COACH
-          </div>
-          <div style={{ fontSize:10, color:'var(--dim)', letterSpacing:3, marginTop:2 }}>AI · 11K EXERCISES · FREE PLAN</div>
-        </div>
-
-        <div style={{ background:'var(--card)', borderRadius:16, padding:22, border:'1px solid var(--border)' }}>
-          <div style={{ display:'flex', gap:5, marginBottom:20 }}>
-            {[1,2].map(s => (
-              <div key={s} style={{ flex:1, height:3, borderRadius:2, background: s<=step ? 'var(--accent)' : 'var(--border)', transition:'background 0.3s' }}/>
+          {/* Serie indicator */}
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:10 }}>
+            {Array.from({length: ex.sets || 3}).map((_,i) => (
+              <div key={i} style={{ width:38, height:38, borderRadius:8, background:i<done?C.accent:C.surface, color:i<done?C.bg:C.textDim, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:600, border:`1px solid ${i<done?C.accent:C.border}` }}>
+                {i<done ? "✓" : `S${i+1}`}
+              </div>
             ))}
           </div>
 
-          {step === 1 ? <>
-            <div style={{ fontSize:14, fontWeight:600, marginBottom:6 }}>🤖 Anthropic API Key</div>
-            <div style={{ fontSize:12, color:'var(--dim)', lineHeight:1.5, marginBottom:14 }}>
-              Per la chat AI. Da <span style={{ color:'var(--accent)' }}>console.anthropic.com</span> → API Keys
-            </div>
-            <input type="password" value={ak} onChange={e=>setAk(e.target.value)}
-              onKeyDown={e=>e.key==='Enter'&&ak.trim()&&setStep(2)}
-              placeholder="sk-ant-..."
-              style={{ width:'100%', padding:'11px 13px', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, color:'var(--text)', fontSize:14, fontFamily:'DM Sans', marginBottom:12 }}/>
-            <button onClick={()=>ak.trim()&&setStep(2)} disabled={!ak.trim()} style={{
-              width:'100%', padding:13, borderRadius:10, border:'none',
-              background: ak.trim() ? 'var(--accent)' : 'var(--border)',
-              color: ak.trim() ? 'var(--bg)' : 'var(--dim)',
-              fontWeight:700, fontSize:14, cursor: ak.trim()?'pointer':'default',
-              fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:1
-            }}>AVANTI →</button>
-          </> : <>
-            <div style={{ fontSize:14, fontWeight:600, marginBottom:6 }}>🏋️ RapidAPI Key</div>
-            <div style={{ fontSize:12, color:'var(--dim)', lineHeight:1.5, marginBottom:14 }}>
-              Per le GIF. Da <span style={{ color:'var(--accent)' }}>rapidapi.com</span> → ExerciseDB → Dashboard → X-RapidAPI-Key
-            </div>
-            <input type="password" value={rk} onChange={e=>setRk(e.target.value)}
-              onKeyDown={e=>e.key==='Enter'&&rk.trim()&&onDone(ak,rk)}
-              placeholder="x-rapidapi-key..."
-              style={{ width:'100%', padding:'11px 13px', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, color:'var(--text)', fontSize:14, fontFamily:'DM Sans', marginBottom:12 }}/>
-            <button onClick={()=>rk.trim()&&onDone(ak,rk)} disabled={!rk.trim()} style={{
-              width:'100%', padding:13, borderRadius:10, border:'none',
-              background: rk.trim() ? 'var(--accent)' : 'var(--border)',
-              color: rk.trim() ? 'var(--bg)' : 'var(--dim)',
-              fontWeight:700, fontSize:14, cursor: rk.trim()?'pointer':'default',
-              fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:1
-            }}>INIZIA →</button>
-          </>}
+          <button onClick={handleSerie} disabled={all}
+            style={{ width:"100%", padding:"11px", borderRadius:10, background:all?C.surface:(isTime?C.blue:C.accent), color:all?C.textDim:C.bg, border:"none", fontWeight:700, fontSize:14, cursor:all?"default":"pointer" }}>
+            {all ? "Completato ✓" : isTime ? `▶ Avvia serie ${done+1} (${ex.duration}s)` : `Serie ${done+1} completata →`}
+          </button>
         </div>
-        <div style={{ textAlign:'center', marginTop:12, fontSize:11, color:'var(--dim)' }}>
-          Le key restano solo in memoria · Non vengono mai salvate
-        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── CHAT BUBBLE ──────────────────────────────────────────────────────────────
+function Bubble({ msg }) {
+  const u = msg.role === "user";
+  return (
+    <div className="fade-in" style={{ display:"flex", justifyContent:u?"flex-end":"flex-start", marginBottom:10 }}>
+      <div style={{ maxWidth:"88%", padding:"11px 15px", background:u?C.chatU:C.chatA, borderRadius:u?"16px 16px 4px 16px":"16px 16px 16px 4px", border:`1px solid ${u?"#253050":"#1a2f1e"}`, color:C.text, fontSize:14, lineHeight:1.55, whiteSpace:"pre-wrap" }}>
+        {!u && <div style={{ fontSize:10, color:C.accent, fontWeight:700, marginBottom:3, letterSpacing:1.5 }}>COACH AI</div>}
+        {msg.content}
       </div>
     </div>
   );
 }
 
-// ─── APP ──────────────────────────────────────────────────────────────────────
-function App() {
-  const [ak, setAk] = useState('');
-  const [rk, setRk] = useState('');
-  const [ready, setReady] = useState(false);
-  const [view, setView] = useState('chat');
-  const [plan, setPlan] = useState(null);
-  const [msgs, setMsgs] = useState([{
-    role:'assistant',
-    content:'Ciao! Sono Iron Coach 💪\n\nAccedo a 11.000+ esercizi con GIF animate — forza, mobilità, pliometria, tutto.\n\nDimmi:\n→ Obiettivo?\n→ Giorni a settimana?\n→ Attrezzatura disponibile?\n→ Livello e zone da evitare?'
-  }]);
-  const [inp, setInp] = useState('');
-  const [busy, setBusy] = useState(false);
+// ─── SAVED PLANS PANEL ────────────────────────────────────────────────────────
+function SavedPanel({ onClose, onLoad }) {
+  const [plans, setPlans] = useState(getSavedPlans());
+  const handleDelete = (id) => { deleteSavedPlan(id); setPlans(getSavedPlans()); };
+  const fmt = (iso) => { try { const d = new Date(iso); return d.toLocaleDateString("it-IT", {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}); } catch { return iso; } };
 
-  const parsePlan = txt => {
-    const m = txt.match(/```json\s*([\s\S]*?)\s*```/);
-    if(m) { try { return JSON.parse(m[1]).workout_plan||null; } catch(e){} }
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", zIndex:1500, display:"flex", flexDirection:"column" }}>
+      <div style={{ padding:"14px 16px", borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ fontWeight:700, fontSize:16 }}>📋 Schede salvate</div>
+        <button onClick={onClose} style={{ background:"none", border:"none", color:C.textDim, fontSize:22, cursor:"pointer" }}>×</button>
+      </div>
+      <div style={{ flex:1, overflow:"auto", padding:12 }}>
+        {plans.length === 0 ? (
+          <div style={{ textAlign:"center", padding:40, color:C.textDim }}>
+            <div style={{ fontSize:32, marginBottom:8 }}>📭</div>
+            <div>Nessuna scheda salvata</div>
+          </div>
+        ) : plans.map(p => (
+          <div key={p.id} className="fade-in" style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:"12px 14px", marginBottom:8 }}>
+            <div style={{ fontWeight:600, fontSize:14, marginBottom:4 }}>{p.plan.name}</div>
+            <div style={{ fontSize:12, color:C.textDim, marginBottom:10 }}>
+              {fmt(p.savedAt)} · {p.plan.weeks} sett. · {p.plan.days?.length} giorni
+            </div>
+            <div style={{ display:"flex", gap:6 }}>
+              <button onClick={() => { onLoad(p.plan); onClose(); }}
+                style={{ flex:1, padding:"8px 0", borderRadius:8, background:C.accent, color:C.bg, border:"none", fontWeight:700, fontSize:13, cursor:"pointer" }}>
+                Carica
+              </button>
+              <button onClick={() => handleDelete(p.id)}
+                style={{ padding:"8px 14px", borderRadius:8, background:"rgba(255,80,80,0.1)", color:"#ff5050", border:"1px solid rgba(255,80,80,0.2)", fontWeight:600, fontSize:13, cursor:"pointer" }}>
+                Elimina
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+function App() {
+  const [apiKey, setApiKey] = useState(getKey());
+  const [keySet, setKeySet] = useState(!!getKey());
+  const [view, setView] = useState("chat");
+  const [exercises, setExercises] = useState([]);
+  const [dbLoading, setDbLoading] = useState(true);
+  const [dbError, setDbError] = useState(false);
+  const [msgs, setMsgs] = useState([{
+    role:"assistant",
+    content:"Ciao Ale! 💪\n\nSono il tuo Coach AI. Dimmi:\n\n→ Obiettivo? (massa, forza, definizione, mobilità, mix)\n→ Giorni a settimana?\n→ Attrezzatura? (palestra, casa, misto)\n→ Problemi o zone da evitare?\n\nCostruiamo la tua scheda."
+  }]);
+  const [inp, setInp] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [plan, setPlan] = useState(null);
+  const [day, setDay] = useState(0);
+  const [activeTimer, setActiveTimer] = useState(null);
+  const [showSaved, setShowSaved] = useState(false);
+  const endRef = useRef(null);
+
+  // Load exercise database
+  useEffect(() => {
+    fetch(DB_URL)
+      .then(r => r.json())
+      .then(data => {
+        setExercises(Array.isArray(data) ? data : []);
+        setDbLoading(false);
+      })
+      .catch(() => { setDbError(true); setDbLoading(false); });
+  }, []);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior:"smooth" }); }, [msgs, busy]);
+
+  const parse = (t) => {
+    const m = t.match(/```json\s*([\s\S]*?)\s*```/);
+    if (m) { try { return JSON.parse(m[1]).workout_plan || null; } catch(e){} }
     return null;
   };
 
+  const SYS = exercises.length ? `Sei un personal trainer AI esperto. Utente: Ale, 30+ anni, attivo (beach volley, basket, HIIT, mobilità).
+RISPONDI IN ITALIANO. Diretto e pratico.
+
+Quando proponi scheda, JSON in \`\`\`json\`\`\`:
+\`\`\`json
+{"workout_plan":{"name":"Nome Scheda","weeks":4,"days":[{"day":"Giorno 1 - Push","focus":"Petto, Spalle, Tricipiti","exercises":[{"id":"","name":"Barbell Bench Press","sets":4,"reps":"8-10","rest":120,"weight":"70-80%","notes":"Controlla discesa"},{"id":"","name":"Plank","sets":3,"duration":60,"rest":45,"notes":"Core attivato"}]}]}}
+\`\`\`
+
+REGOLE:
+- Il campo "name" deve corrispondere ESATTAMENTE a un esercizio del database.
+- Per esercizi a TEMPO (plank, hold, cardio) usa "duration" in secondi invece di "reps".
+- Riposo: forza 120-180s, ipertrofia 60-90s, HIIT 20-45s, mobilità 30s.
+- Includi sempre riscaldamento nelle note del primo esercizio.
+- Varia tra spinta/trazione, maiuscole/minuscole non importa.
+
+DATABASE ESERCIZI (~800 disponibili):
+${buildExerciseList(exercises).substring(0, 6000)}
+...e molti altri. Puoi usare qualsiasi esercizio dal database, descrivi con nome preciso.` : "Sistema in caricamento...";
+
   const send = async () => {
-    if(!inp.trim()||busy) return;
-    const um = { role:'user', content:inp.trim() };
+    if (!inp.trim() || busy) return;
+    const um = { role:"user", content:inp.trim() };
     const nm = [...msgs, um];
-    setMsgs(nm); setInp(''); setBusy(true);
+    setMsgs(nm); setInp(""); setBusy(true);
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method:'POST',
-        headers:{
-          'Content-Type':'application/json',
-          'x-api-key': ak,
-          'anthropic-version':'2023-06-01',
-          'anthropic-dangerous-direct-browser-access':'true'
-        },
-        body: JSON.stringify({
-          model:'claude-sonnet-4-20250514',
-          max_tokens:4000,
-          system: SYSTEM,
-          messages: nm.map(m=>({role:m.role,content:m.content}))
-        })
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", "x-api-key":apiKey, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
+        body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:4000, system:SYS, messages:nm.map(m => ({role:m.role, content:m.content})) })
       });
-      const data = await res.json();
-      if(data.error){ setMsgs([...nm,{role:'assistant',content:`❌ ${data.error.message}`}]); setBusy(false); return; }
-      const txt = data.content?.map(c=>c.text||'').join('')||'';
-      const p = parsePlan(txt);
-      if(p){
-        setPlan(p);
-        const show = txt.replace(/```json[\s\S]*?```/,'').trim();
-        setMsgs([...nm,{role:'assistant',content:show+'\n\n✅ Scheda pronta! Vai su SCHEDA per allenarti.'}]);
-        setView('workout');
-      } else {
-        setMsgs([...nm,{role:'assistant',content:txt}]);
-      }
-    } catch(e){
-      setMsgs([...nm,{role:'assistant',content:'❌ Errore connessione. Riprova.'}]);
-    }
+      const d = await r.json();
+      if (d.error) { setMsgs([...nm, {role:"assistant", content:`Errore API: ${d.error.message}\n\nControlla la tua API key.`}]); setBusy(false); return; }
+      const txt = d.content?.map(c => c.text||"").join("") || "Errore!";
+      const p = parse(txt);
+      if (p) { setPlan(p); setDay(0); savePlan(p); }
+      const show = txt.replace(/```json[\s\S]*?```/g, p ? "\n\n✅ Scheda generata e salvata! Tocca 'Scheda' per vederla." : "").trim();
+      setMsgs([...nm, {role:"assistant", content:show}]);
+    } catch(e) { setMsgs([...nm, {role:"assistant", content:"Errore connessione. Riprova!"}]); }
     setBusy(false);
   };
 
-  if(!ready) return <Setup onDone={(a,r)=>{ setAk(a); setRk(r); setReady(true); }}/>;
+  const handleTimer = (cfg) => setActiveTimer(cfg);
+  const closeTimer = () => setActiveTimer(null);
 
-  return (
-    <div style={{ minHeight:'100vh', background:'var(--bg)', maxWidth:480, margin:'0 auto', display:'flex', flexDirection:'column' }}>
-      {/* Header */}
-      <div style={{ padding:'12px 16px', borderBottom:'1px solid var(--border)', background:'var(--surface)', position:'sticky', top:0, zIndex:100 }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-          <div>
-            <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:22, fontWeight:900, letterSpacing:1 }}>
-              <span style={{ color:'var(--accent)' }}>IRON</span> COACH
-            </div>
-            <div style={{ fontSize:9, color:'var(--dim)', letterSpacing:2 }}>11K EXERCISES · AI POWERED</div>
-          </div>
-          {plan && (
-            <div style={{ fontSize:10, color:'var(--accent)', background:'var(--glow)', padding:'4px 10px', borderRadius:20, fontWeight:700, border:'1px solid rgba(200,241,53,0.2)', fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:1, maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-              {plan.title}
-            </div>
-          )}
+  // ─── KEY SETUP ──────────────────────────────────────────────────────────────
+  if (!keySet) return (
+    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div style={{ maxWidth:400, width:"100%" }}>
+        <div style={{ textAlign:"center", marginBottom:24 }}>
+          <div style={{ fontSize:28, fontWeight:700 }}><span style={{ color:C.accent }}>●</span> IRON COACH</div>
+          <div style={{ fontSize:11, color:C.textDim, letterSpacing:3, marginTop:4 }}>AI WORKOUT PLANNER</div>
         </div>
-        <div style={{ display:'flex', gap:4 }}>
-          {['chat','workout'].map(t => (
-            <button key={t} onClick={()=>setView(t)} disabled={t==='workout'&&!plan}
-              style={{
-                flex:1, padding:'8px 0', borderRadius:10, border:'none', cursor: t==='workout'&&!plan?'default':'pointer',
-                background: view===t ? 'var(--accent)' : 'var(--surface)',
-                color: view===t ? 'var(--bg)' : t==='workout'&&!plan ? 'var(--border)' : 'var(--dim)',
-                fontWeight:700, fontSize:12, fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:1
-              }}>
-              {t==='chat' ? '💬 CHAT' : '🏋️ SCHEDA'}
+        <div style={{ background:C.card, borderRadius:16, padding:24, border:`1px solid ${C.border}` }}>
+          <div style={{ fontSize:14, fontWeight:600, marginBottom:10 }}>🔑 Anthropic API Key</div>
+          <div style={{ fontSize:12, color:C.textDim, lineHeight:1.6, marginBottom:14 }}>
+            Prendila da <strong style={{ color:C.text }}>console.anthropic.com</strong> → API Keys.
+            Costa pochi centesimi/mese per uso personale. Salvata solo nel tuo browser.
+          </div>
+          <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
+            onKeyDown={e => e.key==="Enter" && apiKey.trim() && (setKey(apiKey.trim()), setKeySet(true))}
+            placeholder="sk-ant-..."
+            style={{ width:"100%", padding:"12px 14px", background:C.surface, border:`1px solid ${C.border}`, borderRadius:10, color:C.text, fontSize:14, fontFamily:"inherit", marginBottom:12 }} />
+          <button onClick={() => { if(apiKey.trim()){ setKey(apiKey.trim()); setKeySet(true); }}} disabled={!apiKey.trim()}
+            style={{ width:"100%", padding:"13px", borderRadius:10, background:apiKey.trim()?C.accent:C.surface, color:apiKey.trim()?C.bg:C.textDim, border:"none", fontWeight:700, fontSize:15, cursor:apiKey.trim()?"pointer":"default" }}>
+            Inizia 🏋️
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ─── MAIN VIEW ──────────────────────────────────────────────────────────────
+  return (
+    <div style={{ minHeight:"100vh", background:C.bg, color:C.text, maxWidth:480, margin:"0 auto", display:"flex", flexDirection:"column" }}>
+
+      {/* OVERLAYS */}
+      {activeTimer && (
+        <TimerOverlay
+          sec={activeTimer.sec}
+          label={activeTimer.label}
+          color={activeTimer.color}
+          onDone={() => { if (activeTimer.onDone) activeTimer.onDone(); closeTimer(); }}
+          onSkip={() => { if (activeTimer.onDone) activeTimer.onDone(); closeTimer(); }}
+        />
+      )}
+      {showSaved && <SavedPanel onClose={() => setShowSaved(false)} onLoad={(p) => { setPlan(p); setDay(0); setView("workout"); }} />}
+
+      {/* HEADER */}
+      <div style={{ padding:"12px 16px", borderBottom:`1px solid ${C.border}`, background:C.surface, position:"sticky", top:0, zIndex:100 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+          <div>
+            <div style={{ fontSize:17, fontWeight:700 }}><span style={{ color:C.accent }}>●</span> IRON COACH</div>
+            <div style={{ fontSize:10, color:C.textDim, letterSpacing:2 }}>AI WORKOUT PLANNER</div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            {dbLoading && <div style={{ width:16, height:16, border:`2px solid ${C.accent}`, borderTopColor:"transparent", borderRadius:"50%", animation:"spin 0.8s linear infinite" }} />}
+            {dbError && <span style={{ fontSize:10, color:C.warning }}>⚠ DB offline</span>}
+            {!dbLoading && !dbError && <span style={{ fontSize:10, color:C.textDim }}>{exercises.length} esercizi</span>}
+            <button onClick={() => setShowSaved(true)}
+              style={{ padding:"5px 11px", borderRadius:8, background:C.card, border:`1px solid ${C.border}`, color:C.textDim, fontSize:12, cursor:"pointer", fontWeight:600 }}>
+              📋 Salvate
+            </button>
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:4 }}>
+          {["chat","workout"].map(t => (
+            <button key={t} onClick={() => setView(t)}
+              style={{ flex:1, padding:"8px 0", borderRadius:10, background:view===t?C.accent:"transparent", color:view===t?C.bg:C.textDim, border:view===t?"none":`1px solid ${C.border}`, fontWeight:700, fontSize:13, cursor:"pointer", opacity:t==="workout"&&!plan?0.35:1 }}>
+              {t==="chat" ? "💬 Chat" : "🏋️ Scheda"}
             </button>
           ))}
         </div>
       </div>
 
-      {view==='chat'
-        ? <ChatView msgs={msgs} busy={busy} inp={inp} setInp={setInp} onSend={send}/>
-        : plan && <WorkoutView plan={plan} rapidKey={rk}/>
-      }
+      {/* CHAT VIEW */}
+      {view==="chat" && (
+        <div style={{ flex:1, display:"flex", flexDirection:"column" }}>
+          <div style={{ flex:1, overflow:"auto", padding:"12px 12px 110px" }}>
+            {msgs.map((m,i) => <Bubble key={i} msg={m} />)}
+            {busy && (
+              <div style={{ display:"flex", gap:6, padding:"10px 16px" }}>
+                {[0,1,2].map(i => <div key={i} style={{ width:8, height:8, borderRadius:"50%", background:C.accent, animation:`dot 1s ${i*0.2}s infinite` }} />)}
+              </div>
+            )}
+            <div ref={endRef} />
+          </div>
+          <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, padding:"8px 12px 16px", background:`linear-gradient(transparent, ${C.bg} 25%)` }}>
+            <div style={{ display:"flex", gap:8, background:C.surface, borderRadius:14, border:`1px solid ${C.border}`, padding:5 }}>
+              <textarea value={inp} onChange={e => setInp(e.target.value)}
+                onKeyDown={e => { if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); send(); }}}
+                placeholder="Scrivi al coach…" rows={1}
+                style={{ flex:1, background:"transparent", border:"none", color:C.text, fontSize:14, padding:"10px 12px", resize:"none", lineHeight:1.4, fontFamily:"inherit" }} />
+              <button onClick={send} disabled={!inp.trim()||busy}
+                style={{ width:44, height:44, borderRadius:10, flexShrink:0, background:inp.trim()?C.accent:C.card, color:inp.trim()?C.bg:C.textDim, border:"none", fontSize:18, cursor:inp.trim()?"pointer":"default", display:"flex", alignItems:"center", justifyContent:"center" }}>↑</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WORKOUT VIEW */}
+      {view==="workout" && (
+        <div style={{ flex:1, overflow:"auto", padding:"12px 12px 40px" }}>
+          {!plan ? (
+            <div style={{ textAlign:"center", padding:"60px 20px", color:C.textDim }}>
+              <div style={{ fontSize:48, marginBottom:14 }}>🏋️</div>
+              <div style={{ fontSize:16, fontWeight:600, marginBottom:6, color:C.text }}>Nessuna scheda attiva</div>
+              <div style={{ fontSize:13, marginBottom:16 }}>Chatta col Coach oppure carica una scheda salvata</div>
+              <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
+                <button onClick={() => setView("chat")}
+                  style={{ padding:"11px 20px", background:C.accent, color:C.bg, border:"none", borderRadius:10, fontWeight:700, cursor:"pointer", fontSize:14 }}>
+                  💬 Chat
+                </button>
+                <button onClick={() => setShowSaved(true)}
+                  style={{ padding:"11px 20px", background:C.card, color:C.text, border:`1px solid ${C.border}`, borderRadius:10, fontWeight:700, cursor:"pointer", fontSize:14 }}>
+                  📋 Salvate
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{ marginBottom:14 }}>
+                <div style={{ fontSize:19, fontWeight:700 }}>{plan.name}</div>
+                <div style={{ fontSize:12, color:C.textDim, marginTop:2 }}>{plan.weeks} sett. · {plan.days?.length} giorni</div>
+              </div>
+
+              {/* Day selector */}
+              <div style={{ display:"flex", gap:5, overflowX:"auto", marginBottom:14, paddingBottom:4 }}>
+                {plan.days?.map((d,i) => (
+                  <button key={i} onClick={() => setDay(i)}
+                    style={{ padding:"7px 13px", borderRadius:9, whiteSpace:"nowrap", flexShrink:0, background:day===i?C.accent:C.card, color:day===i?C.bg:C.textDim, border:day===i?"none":`1px solid ${C.border}`, fontWeight:600, fontSize:12, cursor:"pointer" }}>
+                    {(d.day||`G${i+1}`).replace(/Giorno \d+ - /,"")||`G${i+1}`}
+                  </button>
+                ))}
+              </div>
+
+              {plan.days?.[day] && (
+                <>
+                  <div style={{ padding:"9px 13px", background:C.accentGlow, borderRadius:10, marginBottom:12, border:`1px solid ${C.accent}20` }}>
+                    <div style={{ fontSize:15, fontWeight:700 }}>{plan.days[day].day}</div>
+                    <div style={{ fontSize:12, color:C.textDim, marginTop:2 }}>{plan.days[day].focus}</div>
+                  </div>
+
+                  <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
+                    {plan.days[day].exercises?.map((ex,i) => {
+                      const data = findExercise(exercises, ex.name || ex.id);
+                      return <ExCard key={`${ex.name||ex.id}-${i}`} ex={ex} data={data} idx={i} onStartTimer={handleTimer} />;
+                    })}
+                  </div>
+                </>
+              )}
+
+              <button onClick={() => setView("chat")}
+                style={{ width:"100%", marginTop:18, padding:"12px", background:C.surface, border:`1px solid ${C.border}`, borderRadius:12, color:C.textDim, fontWeight:600, fontSize:13, cursor:"pointer" }}>
+                💬 Modifica in chat
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById('app')).render(<App/>);
+ReactDOM.createRoot(document.getElementById("app")).render(<App />);
 </script>
 </body>
 </html>
